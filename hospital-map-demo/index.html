@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>医院室内路线引导 Demo</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --ink: #1f2937;
+      --muted: #667085;
+      --line: #d0d5dd;
+      --primary: #0f766e;
+      --primary-strong: #0b5f59;
+      --accent: #dc6803;
+      --danger: #b42318;
+      --route: #e11d48;
+      --node: #344054;
+      --room: #eef4ff;
+      --room-border: #b2ccff;
+      --hall: #f8fafc;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding: 24px;
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+    }
+
+    .brand {
+      display: grid;
+      gap: 6px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .brand p,
+    .field span,
+    .summary,
+    .step-list li,
+    .legend {
+      color: var(--muted);
+    }
+
+    .brand p {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .controls {
+      display: grid;
+      gap: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .field span {
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    select,
+    button {
+      width: 100%;
+      min-height: 42px;
+      border-radius: 8px;
+      font: inherit;
+    }
+
+    select {
+      padding: 0 12px;
+      color: var(--ink);
+      background: #fff;
+      border: 1px solid var(--line);
+    }
+
+    button {
+      border: 0;
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--primary);
+    }
+
+    button:hover {
+      background: var(--primary-strong);
+    }
+
+    .summary {
+      padding: 12px;
+      min-height: 72px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f9fafb;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .step-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .step-list li {
+      position: relative;
+      padding: 10px 12px 10px 34px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .step-list li::before {
+      content: attr(data-step);
+      position: absolute;
+      left: 10px;
+      top: 11px;
+      display: grid;
+      place-items: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--primary);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .map-shell {
+      min-width: 0;
+      padding: 24px;
+      overflow: auto;
+    }
+
+    .map-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .map-toolbar h2 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+      font-size: 13px;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot,
+    .line-sample {
+      display: inline-block;
+      flex: 0 0 auto;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--primary);
+    }
+
+    .dot.node {
+      background: var(--node);
+    }
+
+    .dot.end {
+      background: var(--accent);
+    }
+
+    .line-sample {
+      width: 24px;
+      height: 3px;
+      background: var(--route);
+    }
+
+    .map-frame {
+      width: min(100%, 1120px);
+      min-width: 860px;
+      aspect-ratio: 1000 / 620;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 18px 48px rgba(16, 24, 40, 0.08);
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .room {
+      fill: var(--room);
+      stroke: var(--room-border);
+      stroke-width: 2;
+    }
+
+    .hall {
+      fill: var(--hall);
+      stroke: #cbd5e1;
+      stroke-width: 2;
+    }
+
+    .room-label {
+      fill: #1f2937;
+      font-size: 18px;
+      font-weight: 700;
+      text-anchor: middle;
+      dominant-baseline: middle;
+    }
+
+    .edge {
+      stroke: #98a2b3;
+      stroke-width: 4;
+      stroke-linecap: round;
+      stroke-dasharray: 8 10;
+    }
+
+    .route-line {
+      stroke: var(--route);
+      stroke-width: 10;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+      filter: drop-shadow(0 4px 8px rgba(225, 29, 72, 0.22));
+    }
+
+    .node-point {
+      fill: var(--node);
+      stroke: #fff;
+      stroke-width: 3;
+    }
+
+    .poi-point {
+      fill: var(--primary);
+      stroke: #fff;
+      stroke-width: 4;
+      cursor: pointer;
+    }
+
+    .poi-point.start {
+      fill: var(--danger);
+    }
+
+    .poi-point.end {
+      fill: var(--accent);
+    }
+
+    .poi-label {
+      fill: #111827;
+      font-size: 15px;
+      font-weight: 800;
+      text-anchor: middle;
+      paint-order: stroke;
+      stroke: #fff;
+      stroke-width: 5;
+      stroke-linejoin: round;
+    }
+
+    .scale-label {
+      fill: #475467;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    @media (max-width: 900px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .map-shell {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="sidebar">
+      <section class="brand">
+        <h1>医院室内路线引导</h1>
+        <p>门诊楼 1F 关键点路线查询</p>
+      </section>
+
+      <section class="controls" aria-label="路线选择">
+        <label class="field" for="startPoi">
+          <span>起点</span>
+          <select id="startPoi"></select>
+        </label>
+        <label class="field" for="endPoi">
+          <span>终点</span>
+          <select id="endPoi"></select>
+        </label>
+        <button id="routeButton" type="button">开始导航</button>
+      </section>
+
+      <section class="summary" id="summary">请选择起点和终点。</section>
+
+      <ol class="step-list" id="steps" aria-label="路线步骤"></ol>
+    </aside>
+
+    <section class="map-shell">
+      <div class="map-toolbar">
+        <h2 id="floorTitle">门诊楼 1F</h2>
+        <div class="legend" aria-label="图例">
+          <span class="legend-item"><i class="dot"></i>POI</span>
+          <span class="legend-item"><i class="dot node"></i>路径节点</span>
+          <span class="legend-item"><i class="dot end"></i>终点</span>
+          <span class="legend-item"><i class="line-sample"></i>规划路线</span>
+        </div>
+      </div>
+
+      <div class="map-frame">
+        <svg id="map" viewBox="0 0 1000 620" role="img" aria-label="医院楼层路线示意图">
+          <rect x="0" y="0" width="1000" height="620" fill="#ffffff"></rect>
+          <rect class="hall" x="110" y="260" width="770" height="120" rx="8"></rect>
+          <rect class="hall" x="440" y="120" width="120" height="380" rx="8"></rect>
+          <rect class="hall" x="720" y="120" width="110" height="380" rx="8"></rect>
+
+          <rect class="room" x="80" y="120" width="180" height="120" rx="6"></rect>
+          <text class="room-label" x="170" y="180">挂号处</text>
+
+          <rect class="room" x="300" y="120" width="120" height="120" rx="6"></rect>
+          <text class="room-label" x="360" y="180">收费处</text>
+
+          <rect class="room" x="580" y="100" width="130" height="140" rx="6"></rect>
+          <text class="room-label" x="645" y="170">检验科</text>
+
+          <rect class="room" x="850" y="110" width="110" height="130" rx="6"></rect>
+          <text class="room-label" x="905" y="175">药房</text>
+
+          <rect class="room" x="820" y="400" width="140" height="110" rx="6"></rect>
+          <text class="room-label" x="890" y="455">影像科</text>
+
+          <rect class="room" x="260" y="410" width="150" height="100" rx="6"></rect>
+          <text class="room-label" x="335" y="460">卫生间</text>
+
+          <rect class="room" x="70" y="410" width="150" height="100" rx="6"></rect>
+          <text class="room-label" x="145" y="460">入口</text>
+
+          <rect class="room" x="580" y="410" width="120" height="100" rx="6"></rect>
+          <text class="room-label" x="640" y="460">电梯 A</text>
+
+          <g id="edgeLayer"></g>
+          <polyline id="routeLine" class="route-line" points=""></polyline>
+          <g id="nodeLayer"></g>
+          <g id="poiLayer"></g>
+
+          <line x1="760" y1="560" x2="860" y2="560" stroke="#475467" stroke-width="4"></line>
+          <text class="scale-label" x="760" y="584">约 20 米</text>
+        </svg>
+      </div>
+    </section>
+  </main>
+
+  <script src="graph-data.js"></script>
+  <script>
+    const graph = window.MED_ROUTE_GRAPH;
+    const { floor, defaults, nodes, edges, pois } = graph;
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const poiById = new Map(pois.map((poi) => [poi.id, poi]));
+    const floorTitle = document.getElementById("floorTitle");
+    const startSelect = document.getElementById("startPoi");
+    const endSelect = document.getElementById("endPoi");
+    const routeButton = document.getElementById("routeButton");
+    const summary = document.getElementById("summary");
+    const steps = document.getElementById("steps");
+    const edgeLayer = document.getElementById("edgeLayer");
+    const nodeLayer = document.getElementById("nodeLayer");
+    const poiLayer = document.getElementById("poiLayer");
+    const routeLine = document.getElementById("routeLine");
+
+    function svgElement(tag, attributes) {
+      const element = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, value));
+      return element;
+    }
+
+    function renderFloorMeta() {
+      floorTitle.textContent = `${floor.buildingName} ${floor.floorName}`;
+      document.title = `${floor.hospitalName}${floor.buildingName}${floor.floorName}路线引导`;
+    }
+
+    function populateSelects() {
+      pois.forEach((poi) => {
+        const startOption = new Option(poi.name, poi.id);
+        const endOption = new Option(poi.name, poi.id);
+        startSelect.add(startOption);
+        endSelect.add(endOption);
+      });
+      startSelect.value = defaults.startPoiId;
+      endSelect.value = defaults.endPoiId;
+    }
+
+    function drawGraph() {
+      edges.forEach((edge) => {
+        const from = nodeById.get(edge.from);
+        const to = nodeById.get(edge.to);
+        edgeLayer.appendChild(svgElement("line", {
+          class: "edge",
+          x1: from.x,
+          y1: from.y,
+          x2: to.x,
+          y2: to.y
+        }));
+      });
+
+      nodes.forEach((node) => {
+        nodeLayer.appendChild(svgElement("circle", {
+          class: "node-point",
+          cx: node.x,
+          cy: node.y,
+          r: 6
+        }));
+      });
+
+      pois.forEach((poi) => {
+        const group = svgElement("g", { "data-poi": poi.id });
+        const point = svgElement("circle", {
+          class: "poi-point",
+          cx: poi.x,
+          cy: poi.y,
+          r: 11
+        });
+        const label = svgElement("text", {
+          class: "poi-label",
+          x: poi.x,
+          y: poi.y - 18
+        });
+        label.textContent = poi.name;
+        group.append(point, label);
+        group.addEventListener("click", () => {
+          if (startSelect.value === poi.id) {
+            endSelect.value = poi.id;
+          } else {
+            endSelect.value = poi.id;
+          }
+          calculateAndRenderRoute();
+        });
+        poiLayer.appendChild(group);
+      });
+    }
+
+    function buildAdjacency() {
+      const adjacency = new Map(nodes.map((node) => [node.id, []]));
+      edges.forEach((edge) => {
+        adjacency.get(edge.from).push({ nodeId: edge.to, distance: edge.distance });
+        adjacency.get(edge.to).push({ nodeId: edge.from, distance: edge.distance });
+      });
+      return adjacency;
+    }
+
+    function findShortestPath(startNodeId, endNodeId) {
+      const adjacency = buildAdjacency();
+      const distances = new Map(nodes.map((node) => [node.id, Infinity]));
+      const previous = new Map();
+      const unvisited = new Set(nodes.map((node) => node.id));
+      distances.set(startNodeId, 0);
+
+      while (unvisited.size > 0) {
+        let current = null;
+        let bestDistance = Infinity;
+        unvisited.forEach((nodeId) => {
+          if (distances.get(nodeId) < bestDistance) {
+            current = nodeId;
+            bestDistance = distances.get(nodeId);
+          }
+        });
+
+        if (current === null || current === endNodeId) {
+          break;
+        }
+
+        unvisited.delete(current);
+        adjacency.get(current).forEach((next) => {
+          if (!unvisited.has(next.nodeId)) {
+            return;
+          }
+          const candidate = distances.get(current) + next.distance;
+          if (candidate < distances.get(next.nodeId)) {
+            distances.set(next.nodeId, candidate);
+            previous.set(next.nodeId, current);
+          }
+        });
+      }
+
+      const path = [];
+      let cursor = endNodeId;
+      while (cursor) {
+        path.unshift(cursor);
+        cursor = previous.get(cursor);
+      }
+
+      if (path[0] !== startNodeId) {
+        return { path: [], distance: Infinity };
+      }
+
+      return { path, distance: distances.get(endNodeId) };
+    }
+
+    function renderPoiState(startPoiId, endPoiId) {
+      poiLayer.querySelectorAll("[data-poi]").forEach((group) => {
+        const point = group.querySelector(".poi-point");
+        point.classList.remove("start", "end");
+        if (group.dataset.poi === startPoiId) {
+          point.classList.add("start");
+        }
+        if (group.dataset.poi === endPoiId) {
+          point.classList.add("end");
+        }
+      });
+    }
+
+    function renderSteps(startPoi, endPoi, path, distance) {
+      const pathNames = path.map((nodeId) => nodeById.get(nodeId).name);
+      const estimatedMinutes = Math.max(1, Math.ceil(distance / 18));
+      summary.innerHTML = `
+        <strong>${startPoi.name} → ${endPoi.name}</strong><br>
+        距离约 ${distance} 米，预计 ${estimatedMinutes} 分钟，经过 ${path.length} 个路径节点。
+      `;
+
+      const stepTexts = [
+        `从${startPoi.name}出发，前往${pathNames[0]}。`,
+        ...pathNames.slice(1, -1).map((name) => `沿通道前进，经过${name}。`),
+        `到达${endPoi.name}附近，导航结束。`
+      ];
+
+      steps.replaceChildren();
+      stepTexts.forEach((text, index) => {
+        const item = document.createElement("li");
+        item.dataset.step = String(index + 1);
+        item.textContent = text;
+        steps.appendChild(item);
+      });
+    }
+
+    function calculateAndRenderRoute() {
+      const startPoi = poiById.get(startSelect.value);
+      const endPoi = poiById.get(endSelect.value);
+
+      renderPoiState(startPoi.id, endPoi.id);
+
+      if (startPoi.id === endPoi.id) {
+        routeLine.setAttribute("points", "");
+        summary.textContent = "起点和终点相同，请选择不同的目的地。";
+        steps.replaceChildren();
+        return;
+      }
+
+      const result = findShortestPath(startPoi.nodeId, endPoi.nodeId);
+      if (result.path.length === 0) {
+        routeLine.setAttribute("points", "");
+        summary.textContent = "当前路网无法到达该目的地。";
+        steps.replaceChildren();
+        return;
+      }
+
+      const points = result.path.map((nodeId) => {
+        const node = nodeById.get(nodeId);
+        return `${node.x},${node.y}`;
+      }).join(" ");
+
+      routeLine.setAttribute("points", points);
+      renderSteps(startPoi, endPoi, result.path, result.distance);
+    }
+
+    renderFloorMeta();
+    populateSelects();
+    drawGraph();
+    calculateAndRenderRoute();
+    routeButton.addEventListener("click", calculateAndRenderRoute);
+    startSelect.addEventListener("change", calculateAndRenderRoute);
+    endSelect.addEventListener("change", calculateAndRenderRoute);
+  </script>
+</body>
+</html>

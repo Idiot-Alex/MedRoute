@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>医院地图编辑器 Demo</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --panel: #fff;
+      --ink: #1f2937;
+      --muted: #667085;
+      --line: #d0d5dd;
+      --primary: #0f766e;
+      --primary-dark: #0b5f59;
+      --accent: #dc6803;
+      --danger: #b42318;
+      --selected: #2563eb;
+      --node: #344054;
+      --room: #eef4ff;
+      --room-border: #b2ccff;
+      --hall: #f8fafc;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 360px minmax(0, 1fr) 360px;
+      min-height: 100vh;
+    }
+
+    .panel {
+      min-width: 0;
+      padding: 22px;
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+    }
+
+    .panel.right {
+      border-right: 0;
+      border-left: 1px solid var(--line);
+    }
+
+    h1,
+    h2 {
+      margin: 0;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: 23px;
+      line-height: 1.2;
+    }
+
+    h2 {
+      font-size: 16px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .stack {
+      display: grid;
+      gap: 16px;
+    }
+
+    .section {
+      display: grid;
+      gap: 12px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .mode-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .mode-btn,
+    button {
+      min-height: 40px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      background: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .mode-btn.active,
+    button.primary {
+      color: #fff;
+      border-color: var(--primary);
+      background: var(--primary);
+    }
+
+    button.primary:hover,
+    .mode-btn.active:hover {
+      background: var(--primary-dark);
+    }
+
+    button.danger {
+      color: #fff;
+      border-color: var(--danger);
+      background: var(--danger);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    label {
+      display: grid;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      background: #fff;
+      font: inherit;
+    }
+
+    input,
+    select {
+      min-height: 40px;
+      padding: 0 10px;
+    }
+
+    textarea {
+      min-height: 260px;
+      padding: 10px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .status {
+      min-height: 54px;
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      background: #f9fafb;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .map-area {
+      min-width: 0;
+      padding: 22px;
+      overflow: auto;
+    }
+
+    .map-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .counter {
+      display: inline-flex;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .map-frame {
+      width: min(100%, 1120px);
+      min-width: 860px;
+      aspect-ratio: 1000 / 620;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 18px 48px rgba(16, 24, 40, 0.08);
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      user-select: none;
+    }
+
+    .room {
+      fill: var(--room);
+      stroke: var(--room-border);
+      stroke-width: 2;
+    }
+
+    .hall {
+      fill: var(--hall);
+      stroke: #cbd5e1;
+      stroke-width: 2;
+    }
+
+    .room-label {
+      fill: #1f2937;
+      font-size: 18px;
+      font-weight: 700;
+      text-anchor: middle;
+      dominant-baseline: middle;
+    }
+
+    .edge {
+      stroke: #98a2b3;
+      stroke-width: 5;
+      stroke-linecap: round;
+      stroke-dasharray: 8 10;
+      cursor: pointer;
+    }
+
+    .edge.selected {
+      stroke: var(--selected);
+      stroke-width: 8;
+      stroke-dasharray: none;
+    }
+
+    .node-point {
+      fill: var(--node);
+      stroke: #fff;
+      stroke-width: 3;
+      cursor: pointer;
+    }
+
+    .node-point.pending {
+      fill: var(--accent);
+      r: 10;
+    }
+
+    .node-point.selected {
+      fill: var(--selected);
+      r: 10;
+    }
+
+    .poi-point {
+      fill: var(--primary);
+      stroke: #fff;
+      stroke-width: 4;
+      cursor: pointer;
+    }
+
+    .poi-point.selected {
+      fill: var(--selected);
+    }
+
+    .poi-label {
+      fill: #111827;
+      font-size: 15px;
+      font-weight: 800;
+      text-anchor: middle;
+      paint-order: stroke;
+      stroke: #fff;
+      stroke-width: 5;
+      stroke-linejoin: round;
+      pointer-events: none;
+    }
+
+    .node-label {
+      fill: #475467;
+      font-size: 11px;
+      font-weight: 800;
+      text-anchor: middle;
+      paint-order: stroke;
+      stroke: #fff;
+      stroke-width: 4;
+      stroke-linejoin: round;
+      pointer-events: none;
+    }
+
+    @media (max-width: 1120px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .panel,
+      .panel.right {
+        border: 0;
+        border-bottom: 1px solid var(--line);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="panel stack">
+      <div class="stack">
+        <h1>地图编辑器</h1>
+        <p class="muted">维护单层楼的路径节点、路径边和 POI，导出后可替换 Demo 数据。</p>
+      </div>
+
+      <section class="section">
+        <h2>编辑模式</h2>
+        <div class="mode-grid">
+          <button class="mode-btn active" type="button" data-mode="select">选择</button>
+          <button class="mode-btn" type="button" data-mode="node">新增节点</button>
+          <button class="mode-btn" type="button" data-mode="edge">连接边</button>
+          <button class="mode-btn" type="button" data-mode="poi">新增 POI</button>
+        </div>
+        <div class="status" id="statusText">选择模式：点击节点、边或 POI 查看详情。</div>
+      </section>
+
+      <section class="section">
+        <h2>选中对象</h2>
+        <div class="status" id="selectionText">未选择对象。</div>
+        <div class="field-grid">
+          <label>
+            名称
+            <input id="nameInput" type="text" disabled />
+          </label>
+          <label>
+            类型/分类
+            <input id="typeInput" type="text" disabled />
+          </label>
+        </div>
+        <div class="field-grid">
+          <label>
+            X
+            <input id="xInput" type="number" disabled />
+          </label>
+          <label>
+            Y
+            <input id="yInput" type="number" disabled />
+          </label>
+        </div>
+        <label>
+          绑定节点
+          <select id="nodeSelect" disabled></select>
+        </label>
+        <button id="saveButton" class="primary" type="button" disabled>保存修改</button>
+        <button id="deleteButton" class="danger" type="button" disabled>删除选中对象</button>
+      </section>
+    </aside>
+
+    <section class="map-area">
+      <div class="map-header">
+        <h2 id="floorTitle">门诊楼 1F</h2>
+        <div class="counter">
+          <span id="nodeCount">节点 0</span>
+          <span id="edgeCount">边 0</span>
+          <span id="poiCount">POI 0</span>
+        </div>
+      </div>
+
+      <div class="map-frame">
+        <svg id="map" viewBox="0 0 1000 620" role="img" aria-label="医院楼层地图编辑区">
+          <rect id="mapClickLayer" x="0" y="0" width="1000" height="620" fill="#ffffff"></rect>
+          <rect class="hall" x="110" y="260" width="770" height="120" rx="8"></rect>
+          <rect class="hall" x="440" y="120" width="120" height="380" rx="8"></rect>
+          <rect class="hall" x="720" y="120" width="110" height="380" rx="8"></rect>
+
+          <rect class="room" x="80" y="120" width="180" height="120" rx="6"></rect>
+          <text class="room-label" x="170" y="180">挂号处</text>
+
+          <rect class="room" x="300" y="120" width="120" height="120" rx="6"></rect>
+          <text class="room-label" x="360" y="180">收费处</text>
+
+          <rect class="room" x="580" y="100" width="130" height="140" rx="6"></rect>
+          <text class="room-label" x="645" y="170">检验科</text>
+
+          <rect class="room" x="850" y="110" width="110" height="130" rx="6"></rect>
+          <text class="room-label" x="905" y="175">药房</text>
+
+          <rect class="room" x="820" y="400" width="140" height="110" rx="6"></rect>
+          <text class="room-label" x="890" y="455">影像科</text>
+
+          <rect class="room" x="260" y="410" width="150" height="100" rx="6"></rect>
+          <text class="room-label" x="335" y="460">卫生间</text>
+
+          <rect class="room" x="70" y="410" width="150" height="100" rx="6"></rect>
+          <text class="room-label" x="145" y="460">入口</text>
+
+          <rect class="room" x="580" y="410" width="120" height="100" rx="6"></rect>
+          <text class="room-label" x="640" y="460">电梯 A</text>
+
+          <g id="edgeLayer"></g>
+          <g id="nodeLayer"></g>
+          <g id="poiLayer"></g>
+        </svg>
+      </div>
+    </section>
+
+    <aside class="panel right stack">
+      <section class="stack">
+        <h2>导出数据</h2>
+        <p class="muted">导出结果和 `graph-data.js` 使用同一结构，可作为后端保存接口的请求体雏形。</p>
+        <button id="exportButton" class="primary" type="button">生成 JSON</button>
+        <textarea id="exportOutput" spellcheck="false" aria-label="导出的地图 JSON"></textarea>
+      </section>
+    </aside>
+  </main>
+
+  <script src="graph-data.js"></script>
+  <script>
+    const sourceGraph = window.MED_ROUTE_GRAPH;
+    const graph = structuredClone(sourceGraph);
+    let mode = "select";
+    let selected = null;
+    let pendingEdgeFrom = null;
+
+    const svg = document.getElementById("map");
+    const floorTitle = document.getElementById("floorTitle");
+    const statusText = document.getElementById("statusText");
+    const selectionText = document.getElementById("selectionText");
+    const edgeLayer = document.getElementById("edgeLayer");
+    const nodeLayer = document.getElementById("nodeLayer");
+    const poiLayer = document.getElementById("poiLayer");
+    const nodeCount = document.getElementById("nodeCount");
+    const edgeCount = document.getElementById("edgeCount");
+    const poiCount = document.getElementById("poiCount");
+    const nameInput = document.getElementById("nameInput");
+    const typeInput = document.getElementById("typeInput");
+    const xInput = document.getElementById("xInput");
+    const yInput = document.getElementById("yInput");
+    const nodeSelect = document.getElementById("nodeSelect");
+    const saveButton = document.getElementById("saveButton");
+    const deleteButton = document.getElementById("deleteButton");
+    const exportButton = document.getElementById("exportButton");
+    const exportOutput = document.getElementById("exportOutput");
+
+    function svgElement(tag, attributes) {
+      const element = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, value));
+      return element;
+    }
+
+    function getPoint(event) {
+      const point = svg.createSVGPoint();
+      point.x = event.clientX;
+      point.y = event.clientY;
+      const transformed = point.matrixTransform(svg.getScreenCTM().inverse());
+      return {
+        x: Math.round(transformed.x),
+        y: Math.round(transformed.y)
+      };
+    }
+
+    function nextId(prefix, items) {
+      const max = items.reduce((value, item) => {
+        const numeric = Number(String(item.id).replace(prefix, ""));
+        return Number.isFinite(numeric) ? Math.max(value, numeric) : value;
+      }, 0);
+      return `${prefix}${max + 1}`;
+    }
+
+    function findNode(id) {
+      return graph.nodes.find((node) => node.id === id);
+    }
+
+    function setMode(nextMode) {
+      mode = nextMode;
+      selected = null;
+      pendingEdgeFrom = null;
+      document.querySelectorAll(".mode-btn").forEach((button) => {
+        button.classList.toggle("active", button.dataset.mode === mode);
+      });
+
+      const textByMode = {
+        select: "选择模式：点击节点、边或 POI 查看详情。",
+        node: "新增节点：点击地图上的通道位置创建路径节点。",
+        edge: "连接边：依次点击两个节点创建可通行路径边。",
+        poi: "新增 POI：点击地图位置创建 POI，并绑定最近路径节点。"
+      };
+      statusText.textContent = textByMode[mode];
+      clearForm();
+      render();
+    }
+
+    function clearForm() {
+      selectionText.textContent = "未选择对象。";
+      [nameInput, typeInput, xInput, yInput, nodeSelect, saveButton, deleteButton].forEach((element) => {
+        element.disabled = true;
+      });
+      nameInput.value = "";
+      typeInput.value = "";
+      xInput.value = "";
+      yInput.value = "";
+      nodeSelect.value = "";
+    }
+
+    function populateNodeSelect() {
+      nodeSelect.replaceChildren();
+      graph.nodes.forEach((node) => {
+        nodeSelect.add(new Option(`${node.id} ${node.name}`, node.id));
+      });
+    }
+
+    function selectObject(kind, id) {
+      selected = { kind, id };
+      pendingEdgeFrom = null;
+      populateNodeSelect();
+      [nameInput, typeInput, saveButton, deleteButton].forEach((element) => {
+        element.disabled = false;
+      });
+
+      if (kind === "node") {
+        const node = findNode(id);
+        selectionText.textContent = `路径节点 ${node.id}`;
+        nameInput.value = node.name;
+        typeInput.value = node.type || "normal";
+        xInput.value = node.x;
+        yInput.value = node.y;
+        xInput.disabled = false;
+        yInput.disabled = false;
+        nodeSelect.disabled = true;
+      }
+
+      if (kind === "edge") {
+        const edge = graph.edges.find((item) => item.id === id);
+        selectionText.textContent = `路径边 ${edge.id}：${edge.from} → ${edge.to}`;
+        nameInput.value = String(edge.distance);
+        typeInput.value = edge.type || "walk";
+        xInput.value = "";
+        yInput.value = "";
+        xInput.disabled = true;
+        yInput.disabled = true;
+        nodeSelect.disabled = true;
+      }
+
+      if (kind === "poi") {
+        const poi = graph.pois.find((item) => item.id === id);
+        selectionText.textContent = `POI ${poi.id}`;
+        nameInput.value = poi.name;
+        typeInput.value = poi.category || "other";
+        xInput.value = poi.x;
+        yInput.value = poi.y;
+        xInput.disabled = false;
+        yInput.disabled = false;
+        nodeSelect.disabled = false;
+        nodeSelect.value = poi.nodeId;
+      }
+
+      render();
+    }
+
+    function nearestNodeId(point) {
+      return graph.nodes.reduce((best, node) => {
+        const distance = Math.hypot(node.x - point.x, node.y - point.y);
+        return distance < best.distance ? { id: node.id, distance } : best;
+      }, { id: graph.nodes[0].id, distance: Infinity }).id;
+    }
+
+    function addNode(point) {
+      const node = {
+        id: nextId("N", graph.nodes),
+        x: point.x,
+        y: point.y,
+        name: `新节点 ${graph.nodes.length + 1}`,
+        type: "normal"
+      };
+      graph.nodes.push(node);
+      selectObject("node", node.id);
+      statusText.textContent = `已创建节点 ${node.id}。`;
+    }
+
+    function addPoi(point) {
+      const poi = {
+        id: nextId("P", graph.pois),
+        name: `新 POI ${graph.pois.length + 1}`,
+        category: "other",
+        nodeId: nearestNodeId(point),
+        x: point.x,
+        y: point.y,
+        searchKeywords: []
+      };
+      graph.pois.push(poi);
+      selectObject("poi", poi.id);
+      statusText.textContent = `已创建 POI ${poi.id}。`;
+    }
+
+    function addEdge(toNodeId) {
+      if (!pendingEdgeFrom) {
+        pendingEdgeFrom = toNodeId;
+        statusText.textContent = `已选择起点 ${toNodeId}，请选择另一个节点。`;
+        render();
+        return;
+      }
+
+      if (pendingEdgeFrom === toNodeId) {
+        statusText.textContent = "路径边需要连接两个不同节点。";
+        return;
+      }
+
+      const exists = graph.edges.some((edge) => {
+        return (edge.from === pendingEdgeFrom && edge.to === toNodeId) ||
+          (edge.from === toNodeId && edge.to === pendingEdgeFrom);
+      });
+      if (exists) {
+        statusText.textContent = "这两个节点之间已经存在路径边。";
+        pendingEdgeFrom = null;
+        render();
+        return;
+      }
+
+      const from = findNode(pendingEdgeFrom);
+      const to = findNode(toNodeId);
+      const edge = {
+        id: nextId("E", graph.edges),
+        from: from.id,
+        to: to.id,
+        distance: Math.max(1, Math.round(Math.hypot(from.x - to.x, from.y - to.y) / 10)),
+        accessible: true,
+        type: "walk"
+      };
+      graph.edges.push(edge);
+      pendingEdgeFrom = null;
+      selectObject("edge", edge.id);
+      statusText.textContent = `已创建路径边 ${edge.id}。`;
+    }
+
+    function saveSelected() {
+      if (!selected) {
+        return;
+      }
+
+      if (selected.kind === "node") {
+        const node = findNode(selected.id);
+        node.name = nameInput.value.trim() || node.name;
+        node.type = typeInput.value.trim() || "normal";
+        node.x = Number(xInput.value);
+        node.y = Number(yInput.value);
+      }
+
+      if (selected.kind === "edge") {
+        const edge = graph.edges.find((item) => item.id === selected.id);
+        edge.distance = Math.max(1, Number(nameInput.value) || edge.distance);
+        edge.type = typeInput.value.trim() || "walk";
+      }
+
+      if (selected.kind === "poi") {
+        const poi = graph.pois.find((item) => item.id === selected.id);
+        poi.name = nameInput.value.trim() || poi.name;
+        poi.category = typeInput.value.trim() || "other";
+        poi.x = Number(xInput.value);
+        poi.y = Number(yInput.value);
+        poi.nodeId = nodeSelect.value;
+      }
+
+      statusText.textContent = "修改已应用到当前编辑数据。";
+      render();
+    }
+
+    function deleteSelected() {
+      if (!selected) {
+        return;
+      }
+
+      if (selected.kind === "node") {
+        graph.nodes = graph.nodes.filter((node) => node.id !== selected.id);
+        graph.edges = graph.edges.filter((edge) => edge.from !== selected.id && edge.to !== selected.id);
+        graph.pois = graph.pois.filter((poi) => poi.nodeId !== selected.id);
+      }
+
+      if (selected.kind === "edge") {
+        graph.edges = graph.edges.filter((edge) => edge.id !== selected.id);
+      }
+
+      if (selected.kind === "poi") {
+        graph.pois = graph.pois.filter((poi) => poi.id !== selected.id);
+      }
+
+      selected = null;
+      clearForm();
+      statusText.textContent = "选中对象已删除。";
+      render();
+    }
+
+    function exportGraph() {
+      exportOutput.value = JSON.stringify(graph, null, 2);
+    }
+
+    function drawEdges() {
+      edgeLayer.replaceChildren();
+      graph.edges.forEach((edge) => {
+        const from = findNode(edge.from);
+        const to = findNode(edge.to);
+        if (!from || !to) {
+          return;
+        }
+        const line = svgElement("line", {
+          class: `edge ${selected?.kind === "edge" && selected.id === edge.id ? "selected" : ""}`,
+          x1: from.x,
+          y1: from.y,
+          x2: to.x,
+          y2: to.y
+        });
+        line.addEventListener("click", (event) => {
+          event.stopPropagation();
+          selectObject("edge", edge.id);
+        });
+        edgeLayer.appendChild(line);
+      });
+    }
+
+    function drawNodes() {
+      nodeLayer.replaceChildren();
+      graph.nodes.forEach((node) => {
+        const point = svgElement("circle", {
+          class: [
+            "node-point",
+            pendingEdgeFrom === node.id ? "pending" : "",
+            selected?.kind === "node" && selected.id === node.id ? "selected" : ""
+          ].filter(Boolean).join(" "),
+          cx: node.x,
+          cy: node.y,
+          r: 7
+        });
+        point.addEventListener("click", (event) => {
+          event.stopPropagation();
+          if (mode === "edge") {
+            addEdge(node.id);
+          } else {
+            selectObject("node", node.id);
+          }
+        });
+
+        const label = svgElement("text", {
+          class: "node-label",
+          x: node.x,
+          y: node.y + 20
+        });
+        label.textContent = node.id;
+        nodeLayer.append(point, label);
+      });
+    }
+
+    function drawPois() {
+      poiLayer.replaceChildren();
+      graph.pois.forEach((poi) => {
+        const group = svgElement("g", { "data-poi": poi.id });
+        const point = svgElement("circle", {
+          class: `poi-point ${selected?.kind === "poi" && selected.id === poi.id ? "selected" : ""}`,
+          cx: poi.x,
+          cy: poi.y,
+          r: 11
+        });
+        const label = svgElement("text", {
+          class: "poi-label",
+          x: poi.x,
+          y: poi.y - 18
+        });
+        label.textContent = poi.name;
+        group.append(point, label);
+        group.addEventListener("click", (event) => {
+          event.stopPropagation();
+          selectObject("poi", poi.id);
+        });
+        poiLayer.appendChild(group);
+      });
+    }
+
+    function render() {
+      floorTitle.textContent = `${graph.floor.buildingName} ${graph.floor.floorName}`;
+      nodeCount.textContent = `节点 ${graph.nodes.length}`;
+      edgeCount.textContent = `边 ${graph.edges.length}`;
+      poiCount.textContent = `POI ${graph.pois.length}`;
+      drawEdges();
+      drawNodes();
+      drawPois();
+    }
+
+    svg.addEventListener("click", (event) => {
+      const point = getPoint(event);
+      if (mode === "node") {
+        addNode(point);
+        return;
+      }
+      if (mode === "poi") {
+        addPoi(point);
+        return;
+      }
+      if (mode === "select") {
+        selected = null;
+        pendingEdgeFrom = null;
+        clearForm();
+        render();
+      }
+    });
+
+    document.querySelectorAll(".mode-btn").forEach((button) => {
+      button.addEventListener("click", () => setMode(button.dataset.mode));
+    });
+    saveButton.addEventListener("click", saveSelected);
+    deleteButton.addEventListener("click", deleteSelected);
+    exportButton.addEventListener("click", exportGraph);
+
+    document.title = `${graph.floor.hospitalName}${graph.floor.buildingName}${graph.floor.floorName}地图编辑器`;
+    populateNodeSelect();
+    render();
+    exportGraph();
+  </script>
+</body>
+</html>
