@@ -14,6 +14,31 @@ Open `index.html` directly in a browser. No server, database, or build step is r
 
 Open `editor.html` to edit the same demo graph. The editor changes data in memory only; use "生成 JSON" to export the edited graph.
 
+To load graph data from the phase-two backend instead of `graph-data.js`, run the server and open:
+
+```text
+index.html?api=http://127.0.0.1:8080
+```
+
+If the backend request fails, the page falls back to the local demo data.
+
+## Current Demo Scope
+
+The route page supports:
+
+- POI search by name, category, and keywords
+- start/destination selection and swap
+- common route presets for quick demonstrations
+- normal shortest route and accessible route modes
+- route calculation that ignores disabled path edges and avoids non-accessible edges in accessible mode
+- step-by-step text using path node names, distance, walk time, and edge remarks
+
+The editor supports maintaining operational path edge fields:
+
+- `accessible`: whether the edge can be used by accessible routes
+- `status`: `enabled`, `disabled`, `construction`, `staff_only`, or `night_closed`
+- `remark`: operational note shown in route steps
+
 ## Data Shape
 
 `graph-data.js` exposes `window.MED_ROUTE_GRAPH`:
@@ -43,6 +68,6 @@ The editor currently supports:
 - add path nodes by clicking the map
 - connect two nodes as a path edge
 - add POIs and bind them to the nearest node
-- edit selected node, edge, or POI fields
+- edit selected node, edge, or POI fields, including edge accessibility, status, and remark
 - delete selected objects
 - export the current graph as JSON

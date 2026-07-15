@@ -38,6 +38,8 @@ hospital-navigation-server/
       MapGraphResponse.java
 ```
 
+当前仓库已创建 `hospital-navigation-server/`，第一版使用内存 Demo 数据验证接口流程，暂未接 PostgreSQL。
+
 ## 2. A* 核心思路
 
 ```java

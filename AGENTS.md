@@ -16,7 +16,7 @@ When code is added, keep the first demo isolated, for example `hospital-map-demo
 
 ## Build, Test, and Development Commands
 
-There are no build or test commands yet because the repository is documentation-only.
+The repository now contains a static frontend demo and a Spring Boot backend skeleton.
 
 Useful local checks:
 
@@ -25,7 +25,16 @@ git status --short
 find . -maxdepth 2 -type f -print
 ```
 
-Once the HTML demo exists, it should be runnable by opening `hospital-map-demo/index.html` directly. If a Spring Boot service is added later, document its exact `mvn` or `gradle` commands in this file and in `docs/README.md`.
+The HTML demo is runnable by opening `hospital-map-demo/index.html` directly.
+
+The backend skeleton is a Maven/Spring Boot module:
+
+```bash
+cd hospital-navigation-server
+mvn spring-boot:run
+```
+
+If Maven is unavailable, the dependency-free A* smoke test can still be checked with `javac`; see `hospital-navigation-server/README.md`.
 
 ## Coding Style & Naming Conventions
 

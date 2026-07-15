@@ -160,6 +160,12 @@
       line-height: 1.5;
     }
 
+    textarea.compact {
+      min-height: 72px;
+      font-family: inherit;
+      font-size: 13px;
+    }
+
     .field-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -242,6 +248,15 @@
       stroke-linecap: round;
       stroke-dasharray: 8 10;
       cursor: pointer;
+    }
+
+    .edge.limited {
+      stroke: #f79009;
+    }
+
+    .edge.closed {
+      stroke: #d92d20;
+      opacity: 0.45;
     }
 
     .edge.selected {
@@ -339,7 +354,7 @@
         <div class="status" id="selectionText">未选择对象。</div>
         <div class="field-grid">
           <label>
-            名称
+            名称/距离
             <input id="nameInput" type="text" disabled />
           </label>
           <label>
@@ -360,6 +375,29 @@
         <label>
           绑定节点
           <select id="nodeSelect" disabled></select>
+        </label>
+        <div class="field-grid">
+          <label>
+            无障碍通行
+            <select id="accessibleSelect" disabled>
+              <option value="true">可通行</option>
+              <option value="false">不推荐/不可通行</option>
+            </select>
+          </label>
+          <label>
+            路径状态
+            <select id="statusSelect" disabled>
+              <option value="enabled">启用</option>
+              <option value="disabled">停用</option>
+              <option value="construction">施工</option>
+              <option value="staff_only">员工通道</option>
+              <option value="night_closed">夜间关闭</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          运营备注
+          <textarea id="remarkInput" class="compact" disabled></textarea>
         </label>
         <button id="saveButton" class="primary" type="button" disabled>保存修改</button>
         <button id="deleteButton" class="danger" type="button" disabled>删除选中对象</button>
@@ -447,6 +485,9 @@
     const xInput = document.getElementById("xInput");
     const yInput = document.getElementById("yInput");
     const nodeSelect = document.getElementById("nodeSelect");
+    const accessibleSelect = document.getElementById("accessibleSelect");
+    const statusSelect = document.getElementById("statusSelect");
+    const remarkInput = document.getElementById("remarkInput");
     const saveButton = document.getElementById("saveButton");
     const deleteButton = document.getElementById("deleteButton");
     const exportButton = document.getElementById("exportButton");
@@ -502,7 +543,7 @@
 
     function clearForm() {
       selectionText.textContent = "未选择对象。";
-      [nameInput, typeInput, xInput, yInput, nodeSelect, saveButton, deleteButton].forEach((element) => {
+      [nameInput, typeInput, xInput, yInput, nodeSelect, accessibleSelect, statusSelect, remarkInput, saveButton, deleteButton].forEach((element) => {
         element.disabled = true;
       });
       nameInput.value = "";
@@ -510,6 +551,9 @@
       xInput.value = "";
       yInput.value = "";
       nodeSelect.value = "";
+      accessibleSelect.value = "true";
+      statusSelect.value = "enabled";
+      remarkInput.value = "";
     }
 
     function populateNodeSelect() {
@@ -537,6 +581,9 @@
         xInput.disabled = false;
         yInput.disabled = false;
         nodeSelect.disabled = true;
+        accessibleSelect.disabled = true;
+        statusSelect.disabled = true;
+        remarkInput.disabled = true;
       }
 
       if (kind === "edge") {
@@ -544,11 +591,17 @@
         selectionText.textContent = `路径边 ${edge.id}：${edge.from} → ${edge.to}`;
         nameInput.value = String(edge.distance);
         typeInput.value = edge.type || "walk";
+        accessibleSelect.value = String(edge.accessible !== false);
+        statusSelect.value = edge.status || "enabled";
+        remarkInput.value = edge.remark || "";
         xInput.value = "";
         yInput.value = "";
         xInput.disabled = true;
         yInput.disabled = true;
         nodeSelect.disabled = true;
+        accessibleSelect.disabled = false;
+        statusSelect.disabled = false;
+        remarkInput.disabled = false;
       }
 
       if (kind === "poi") {
@@ -562,6 +615,9 @@
         yInput.disabled = false;
         nodeSelect.disabled = false;
         nodeSelect.value = poi.nodeId;
+        accessibleSelect.disabled = true;
+        statusSelect.disabled = true;
+        remarkInput.disabled = true;
       }
 
       render();
@@ -633,8 +689,11 @@
         from: from.id,
         to: to.id,
         distance: Math.max(1, Math.round(Math.hypot(from.x - to.x, from.y - to.y) / 10)),
+        walkTime: Math.max(1, Math.round(Math.hypot(from.x - to.x, from.y - to.y) / 180)),
         accessible: true,
-        type: "walk"
+        status: "enabled",
+        type: "walk",
+        remark: ""
       };
       graph.edges.push(edge);
       pendingEdgeFrom = null;
@@ -658,7 +717,11 @@
       if (selected.kind === "edge") {
         const edge = graph.edges.find((item) => item.id === selected.id);
         edge.distance = Math.max(1, Number(nameInput.value) || edge.distance);
+        edge.walkTime = Math.max(1, Math.ceil(edge.distance / 18));
         edge.type = typeInput.value.trim() || "walk";
+        edge.accessible = accessibleSelect.value === "true";
+        edge.status = statusSelect.value || "enabled";
+        edge.remark = remarkInput.value.trim();
       }
 
       if (selected.kind === "poi") {
@@ -712,11 +775,17 @@
           return;
         }
         const line = svgElement("line", {
-          class: `edge ${selected?.kind === "edge" && selected.id === edge.id ? "selected" : ""}`,
+          class: [
+            "edge",
+            (edge.status || "enabled") !== "enabled" ? "closed" : "",
+            edge.accessible === false ? "limited" : "",
+            selected?.kind === "edge" && selected.id === edge.id ? "selected" : ""
+          ].filter(Boolean).join(" "),
           x1: from.x,
           y1: from.y,
           x2: to.x,
-          y2: to.y
+          y2: to.y,
+          "data-edge": edge.id
         });
         line.addEventListener("click", (event) => {
           event.stopPropagation();
@@ -737,7 +806,8 @@
           ].filter(Boolean).join(" "),
           cx: node.x,
           cy: node.y,
-          r: 7
+          r: 7,
+          "data-node": node.id
         });
         point.addEventListener("click", (event) => {
           event.stopPropagation();

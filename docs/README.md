@@ -21,6 +21,11 @@
 7. [前端 Demo 骨架](./07-前端Demo骨架.md)
 8. [后续演进规划](./08-后续演进规划.md)
 
+## 当前实现
+
+- `hospital-map-demo/`: 阶段一静态单层路线引导 Demo，包含导航页、路网数据和地图编辑器。
+- `hospital-navigation-server/`: 阶段二 Spring Boot API 骨架，当前使用内存 Demo 数据验证接口和路线规划流程。
+
 ## 推荐第一步
 
 先看：
