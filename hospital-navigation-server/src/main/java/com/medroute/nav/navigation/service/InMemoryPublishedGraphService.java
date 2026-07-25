@@ -11,8 +11,9 @@ import com.medroute.nav.navigation.model.NavigationGraph;
 import com.medroute.nav.navigation.model.PoiSnapshot;
 import com.medroute.nav.navigation.model.VerticalConnector;
 import com.medroute.nav.navigation.model.VerticalLink;
+import com.medroute.nav.navigation.repository.PublishedGraphRepository;
+import com.medroute.nav.navigation.repository.PublishedGraphSnapshot;
 import com.medroute.nav.model.EdgeDirection;
-import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -28,8 +29,7 @@ import java.util.UUID;
  * Immutable stage-1 fixture. It deliberately models vertical links as explicit graph arcs:
  * sharing a connector code never creates an implicit link.
  */
-@Service
-public class InMemoryPublishedGraphService {
+public class InMemoryPublishedGraphService implements PublishedGraphRepository {
     public static final UUID HOSPITAL_ID = uuid("00000001");
     public static final UUID BUILDING_ID = uuid("00000100");
     public static final UUID RELEASE_ID = uuid("00000200");
@@ -82,26 +82,34 @@ public class InMemoryPublishedGraphService {
         this.graph = Objects.requireNonNull(graph, "graph");
     }
 
-    public NavigationGraph activeGraph(UUID buildingId) {
+    @Override
+    public PublishedGraphSnapshot active(UUID buildingId) {
         if (!graph.buildingId().equals(buildingId)) {
             throw new NavigationResourceNotFoundException(
                 "Unknown buildingId: " + buildingId
             );
         }
-        return graph;
+        return snapshot();
     }
 
-    public NavigationGraph publishedGraph(UUID releaseId) {
+    @Override
+    public PublishedGraphSnapshot published(UUID releaseId) {
         if (!graph.releaseId().equals(releaseId)) {
             throw new NavigationResourceNotFoundException(
                 "Unknown releaseId: " + releaseId
             );
         }
-        return graph;
+        return snapshot();
     }
 
-    public UUID activeReleaseId(UUID buildingId) {
-        return activeGraph(buildingId).releaseId();
+    private PublishedGraphSnapshot snapshot() {
+        return new PublishedGraphSnapshot(
+            graph,
+            "OUTPATIENT",
+            "门急诊楼",
+            "REL-TEST-001",
+            PUBLISHED_AT
+        );
     }
 
     public static NavigationGraph buildGraph() {

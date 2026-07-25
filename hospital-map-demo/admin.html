@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="description"
+    content="MedRoute 医院多楼层地图维护工作台"
+  />
+  <title>MedRoute 地图维护</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="admin.css?v=20260726-11" />
+</head>
+<body>
+  <div class="admin-shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <span class="brand-mark" aria-hidden="true">M</span>
+        <div>
+          <strong>MedRoute 地图维护</strong>
+          <span id="buildingName">正在连接后端</span>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <span class="connection-state" id="connectionState">
+          <span class="state-indicator" aria-hidden="true"></span>
+          <span id="connectionText">连接中</span>
+        </span>
+        <a class="button ghost" id="previewLink" href="multifloor.html">导航预览</a>
+        <button class="button icon-button" id="reloadButton" type="button" title="重新加载">
+          <span aria-hidden="true">↻</span>
+          <span class="sr-only">重新加载</span>
+        </button>
+      </div>
+    </header>
+
+    <aside class="left-panel" aria-label="地图编辑控制">
+      <section class="control-section release-section">
+        <div class="section-heading">
+          <h2>版本</h2>
+          <button class="text-button" id="createDraftButton" type="button">
+            新建草稿
+          </button>
+        </div>
+        <label class="field">
+          <span>当前工作版本</span>
+          <select id="releaseSelect" disabled>
+            <option>正在加载</option>
+          </select>
+        </label>
+        <div class="release-meta" id="releaseMeta">
+          <span>等待版本信息</span>
+        </div>
+        <button
+          class="button danger full-width release-discard"
+          id="discardDraftButton"
+          type="button"
+          hidden
+        >
+          放弃当前草稿
+        </button>
+      </section>
+
+      <section class="control-section">
+        <h2>楼层</h2>
+        <div class="floor-list" id="floorList" role="tablist" aria-label="楼层"></div>
+      </section>
+
+      <section class="control-section">
+        <h2>标注工具</h2>
+        <div class="tool-grid" id="toolGrid" role="group" aria-label="标注工具">
+          <button class="tool-button active" data-tool="select" type="button">选择</button>
+          <button class="tool-button" data-tool="node" type="button">节点</button>
+          <button class="tool-button" data-tool="edge" type="button">路径</button>
+          <button class="tool-button" data-tool="poi" type="button">POI</button>
+          <button class="tool-button" data-tool="stop" type="button">停靠点</button>
+        </div>
+        <p class="tool-hint" id="toolHint">
+          选择地图元素后，在右侧检查和修改属性。
+        </p>
+      </section>
+
+      <section class="control-section connector-section">
+        <div class="section-heading">
+          <h2>跨层设施</h2>
+          <button class="text-button" id="addConnectorButton" type="button">
+            新建设施
+          </button>
+        </div>
+        <label class="field">
+          <span>停靠点归属</span>
+          <select id="connectorSelect">
+            <option value="">请选择电梯或楼梯</option>
+          </select>
+        </label>
+        <button class="button secondary full-width" id="addLinkButton" type="button">
+          配置跨层连接
+        </button>
+        <div class="connector-summary" id="connectorSummary">
+          选择设施后可标注停靠点。
+        </div>
+      </section>
+    </aside>
+
+    <main class="map-workspace">
+      <div class="map-toolbar">
+        <div>
+          <h1 id="mapTitle">楼层地图</h1>
+          <div class="map-counts" id="mapCounts">等待图数据</div>
+        </div>
+        <div class="map-toolbar-actions">
+          <label class="zoom-control">
+            <span>缩放</span>
+            <input
+              id="zoomRange"
+              type="range"
+              min="70"
+              max="160"
+              step="10"
+              value="100"
+            />
+            <output id="zoomOutput" for="zoomRange">100%</output>
+          </label>
+          <span class="save-state" id="saveState">未加载</span>
+          <button class="button secondary" id="replaceMapButton" type="button" disabled>
+            替换底图
+          </button>
+          <input
+            class="sr-only"
+            id="mapFileInput"
+            type="file"
+            accept="image/png,image/jpeg"
+          />
+          <button class="button primary" id="saveButton" type="button" disabled>
+            保存草稿
+          </button>
+        </div>
+      </div>
+
+      <div class="map-scroll" id="mapScroll">
+        <div class="map-stage" id="mapStage" aria-label="楼层地图标注区域">
+          <img id="floorImage" alt="" />
+          <svg
+            id="graphOverlay"
+            xmlns="http://www.w3.org/2000/svg"
+            role="img"
+            aria-label="地图路网标注"
+          >
+            <g id="edgeLayer"></g>
+            <g id="nodeLayer"></g>
+            <g id="stopLayer"></g>
+            <g id="poiLayer"></g>
+          </svg>
+          <div class="map-message" id="mapMessage">
+            <strong>正在加载地图工作区</strong>
+            <span>后端连接成功后会显示当前发布版本。</span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="right-panel" aria-label="属性、发布校验和运营状态">
+      <div class="right-tabs" role="tablist">
+        <button
+          class="right-tab active"
+          id="inspectorTab"
+          data-panel="inspector"
+          type="button"
+          role="tab"
+          aria-selected="true"
+        >
+          属性
+        </button>
+        <button
+          class="right-tab"
+          id="validationTab"
+          data-panel="validation"
+          type="button"
+          role="tab"
+          aria-selected="false"
+        >
+          校验
+          <span class="tab-count" id="validationCount" hidden>0</span>
+        </button>
+        <button
+          class="right-tab"
+          id="operationsTab"
+          data-panel="operations"
+          type="button"
+          role="tab"
+          aria-selected="false"
+        >
+          运营
+          <span class="tab-count warning" id="operationCount" hidden>0</span>
+        </button>
+      </div>
+
+      <div class="right-content">
+        <section id="inspectorPanel" role="tabpanel">
+          <div class="empty-inspector" id="inspectorContent">
+            <strong>未选择地图元素</strong>
+            <p>从中间地图选择节点、路径、POI 或停靠点。</p>
+          </div>
+        </section>
+
+        <section id="validationPanel" role="tabpanel" hidden>
+          <div class="validation-empty" id="validationContent">
+            <strong>尚未执行发布校验</strong>
+            <p>保存草稿后运行校验，系统会检查可达性和跨层配置。</p>
+          </div>
+        </section>
+
+        <section id="operationsPanel" role="tabpanel" hidden>
+          <div class="operations-meta">
+            <strong id="operationsRelease">当前发布版本</strong>
+            <span>立即生效的临时封闭</span>
+          </div>
+          <form class="operation-form" id="closureForm">
+            <label class="field">
+              <span>对象类型</span>
+              <select id="closureTypeInput">
+                <option value="vertical_connector">电梯或楼梯设施</option>
+                <option value="path_edge">楼层路径</option>
+                <option value="vertical_link">跨层连接</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>封闭对象</span>
+              <select id="closureTargetInput" required></select>
+            </label>
+            <label class="field">
+              <span>封闭原因</span>
+              <input id="closureReasonInput" maxlength="500" required />
+            </label>
+            <button class="button danger full-width" id="createClosureButton" type="submit">
+              立即停用
+            </button>
+          </form>
+          <div class="operation-list" id="operationList"></div>
+        </section>
+      </div>
+
+      <div class="publish-actions" id="publishActions">
+        <button class="button secondary" id="validateButton" type="button" disabled>
+          保存并校验
+        </button>
+        <button class="button primary" id="publishButton" type="button" disabled>
+          发布版本
+        </button>
+        <button class="button danger" id="rollbackButton" type="button" hidden>
+          回滚启用此版本
+        </button>
+      </div>
+    </aside>
+  </div>
+
+  <dialog id="createDraftDialog">
+    <form class="dialog-form" id="createDraftForm" method="dialog">
+      <div class="dialog-heading">
+        <h2>从发布版本新建草稿</h2>
+        <button class="dialog-close" type="button" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <label class="field">
+        <span>草稿编码</span>
+        <input id="draftCodeInput" name="code" maxlength="80" required />
+      </label>
+      <label class="field">
+        <span>修改说明</span>
+        <textarea
+          id="draftDescriptionInput"
+          name="description"
+          rows="3"
+          placeholder="例如：调整 A 电梯停靠楼层并补充 3F POI"
+        ></textarea>
+      </label>
+      <p class="dialog-note">
+        系统会复制当前发布版本，原发布数据不会被修改。
+      </p>
+      <div class="dialog-actions">
+        <button class="button ghost" type="button" data-close-dialog>取消</button>
+        <button class="button primary" type="submit">创建草稿</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="connectorDialog">
+    <form class="dialog-form" id="connectorForm" method="dialog">
+      <div class="dialog-heading">
+        <h2>新建跨层设施</h2>
+        <button class="dialog-close" type="button" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <label class="field">
+        <span>设施名称</span>
+        <input id="connectorNameInput" maxlength="100" required placeholder="例如：C 电梯" />
+      </label>
+      <div class="field-row">
+        <label class="field">
+          <span>设施编码</span>
+          <input id="connectorCodeInput" maxlength="80" required placeholder="ELEV-C" />
+        </label>
+        <label class="field">
+          <span>设施类型</span>
+          <select id="connectorTypeInput">
+            <option value="elevator">电梯</option>
+            <option value="stairs">楼梯</option>
+          </select>
+        </label>
+      </div>
+      <label class="check-field">
+        <input id="connectorAccessibleInput" type="checkbox" checked />
+        <span>可用于无障碍路线</span>
+      </label>
+      <div class="dialog-actions">
+        <button class="button ghost" type="button" data-close-dialog>取消</button>
+        <button class="button primary" type="submit">创建设施</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="linkDialog">
+    <form class="dialog-form" id="linkForm" method="dialog">
+      <div class="dialog-heading">
+        <h2>配置跨层连接</h2>
+        <button class="dialog-close" type="button" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <p class="dialog-note" id="linkConnectorName">
+        只有明确连接的停靠点之间才可通行。
+      </p>
+      <div class="field-row">
+        <label class="field">
+          <span>起始停靠点</span>
+          <select id="fromStopInput" required></select>
+        </label>
+        <label class="field">
+          <span>目标停靠点</span>
+          <select id="toStopInput" required></select>
+        </label>
+      </div>
+      <div class="field-row">
+        <label class="field">
+          <span>预计耗时（秒）</span>
+          <input id="linkTimeInput" type="number" min="1" step="1" value="30" required />
+        </label>
+        <label class="field">
+          <span>方向</span>
+          <select id="linkDirectionInput">
+            <option value="both">双向</option>
+            <option value="forward">单向</option>
+          </select>
+        </label>
+      </div>
+      <label class="check-field">
+        <input id="linkAccessibleInput" type="checkbox" checked />
+        <span>连接可用于无障碍路线</span>
+      </label>
+      <div class="dialog-actions">
+        <button class="button ghost" type="button" data-close-dialog>取消</button>
+        <button class="button primary" type="submit">添加连接</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="publishDialog">
+    <form class="dialog-form" id="publishForm" method="dialog">
+      <div class="dialog-heading">
+        <h2>发布当前草稿</h2>
+        <button class="dialog-close" type="button" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <div class="publish-warning">
+        发布后该版本将变为只读，所有新导航请求会立即使用它。
+      </div>
+      <label class="field">
+        <span>发布原因</span>
+        <textarea
+          id="publishReasonInput"
+          rows="3"
+          required
+          placeholder="填写现场复核情况和本次主要调整"
+        ></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button class="button ghost" type="button" data-close-dialog>取消</button>
+        <button class="button primary" type="submit">确认发布</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="rollbackDialog">
+    <form class="dialog-form" id="rollbackForm" method="dialog">
+      <div class="dialog-heading">
+        <h2>回滚到历史版本</h2>
+        <button class="dialog-close" type="button" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <div class="publish-warning">
+        当前导航请求会立即切换到该历史版本，临时封闭状态将同步迁移。
+      </div>
+      <label class="field">
+        <span>回滚原因</span>
+        <textarea
+          id="rollbackReasonInput"
+          rows="3"
+          required
+          placeholder="填写回滚原因和现场确认情况"
+        ></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button class="button ghost" type="button" data-close-dialog>取消</button>
+        <button class="button danger" type="submit">确认回滚</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="discardDraftDialog">
+    <form class="dialog-form" id="discardDraftForm" method="dialog">
+      <div class="dialog-heading">
+        <h2>放弃当前草稿</h2>
+        <button class="dialog-close" type="button" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <div class="publish-warning">
+        草稿、未发布路网和草稿独占的底图将被永久删除，此操作不可撤销。
+      </div>
+      <p class="dialog-note">
+        即将删除：<strong id="discardDraftCode">当前草稿</strong>
+      </p>
+      <div class="dialog-actions">
+        <button class="button ghost" type="button" data-close-dialog>取消</button>
+        <button class="button danger" type="submit">确认放弃</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="admin.js?v=20260726-11"></script>
+</body>
+</html>

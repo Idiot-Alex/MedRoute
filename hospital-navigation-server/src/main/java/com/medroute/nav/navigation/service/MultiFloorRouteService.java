@@ -12,6 +12,8 @@ import com.medroute.nav.navigation.model.GraphArc;
 import com.medroute.nav.navigation.model.GraphNode;
 import com.medroute.nav.navigation.model.NavigationGraph;
 import com.medroute.nav.navigation.model.PoiSnapshot;
+import com.medroute.nav.navigation.repository.PublishedGraphRepository;
+import com.medroute.nav.navigation.service.OperationStatusProvider.OperationStatusSnapshot;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -25,26 +27,28 @@ import java.util.function.Predicate;
 
 @Service
 public class MultiFloorRouteService {
-    private final InMemoryPublishedGraphService graphService;
-    private final InMemoryOperationStatusService operationStatusService;
+    private final PublishedGraphRepository graphRepository;
+    private final OperationStatusProvider operationStatusProvider;
     private final Clock clock;
     private final MultiFloorDijkstraPathFinder pathFinder =
         new MultiFloorDijkstraPathFinder();
 
     public MultiFloorRouteService(
-        InMemoryPublishedGraphService graphService,
-        InMemoryOperationStatusService operationStatusService,
+        PublishedGraphRepository graphRepository,
+        OperationStatusProvider operationStatusProvider,
         Clock clock
     ) {
-        this.graphService = graphService;
-        this.operationStatusService = operationStatusService;
+        this.graphRepository = graphRepository;
+        this.operationStatusProvider = operationStatusProvider;
         this.clock = clock;
     }
 
     public NavigationRouteResponse calculateRoute(NavigationRouteRequest request) {
         validate(request);
         Instant calculatedAt = clock.instant();
-        NavigationGraph graph = graphService.activeGraph(request.buildingId());
+        NavigationGraph graph = graphRepository
+            .active(request.buildingId())
+            .graph();
 
         if (
             request.expectedReleaseId() != null
@@ -66,13 +70,16 @@ public class MultiFloorRouteService {
             );
         }
 
-        Set<UUID> closedElements = operationStatusService.closedElementIds();
-        Set<UUID> closedConnectors = operationStatusService.closedConnectorIds();
+        OperationStatusSnapshot operationStatus = operationStatusProvider.status(
+            request.buildingId(),
+            graph.releaseId(),
+            calculatedAt
+        );
         Predicate<GraphArc> allowed = allowedArcs(
             graph,
             request.routeMode(),
-            closedElements,
-            closedConnectors
+            operationStatus.closedElementIds(),
+            operationStatus.closedConnectorIds()
         );
         RoutePath path = pathFinder.findPath(
             startPoi.nodeId(),

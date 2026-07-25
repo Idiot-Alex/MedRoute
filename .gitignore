@@ -1,2 +1,7 @@
 # Maven build output
 **/target/
+
+# Local IDE metadata and environment overrides
+**/.idea/
+*.iml
+.env

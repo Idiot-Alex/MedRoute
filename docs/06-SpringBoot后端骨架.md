@@ -6,10 +6,10 @@
 `04-数据库设计.md`、`05-接口设计.md` 和 `09-多楼层导航实施方案.md`
 保持一致。
 
-> 当前实现状态（2026-07-25）：阶段 1 已完成。第 2–12 节主要描述阶段 2
-> 及之后的目标模块边界；当前路线策略、分段和指令生成集中在
-> `MultiFloorRouteService`，尚未加入 JDBC、Flyway、Spring Security、
-> Bean Validation 和发布事务。
+> 当前实现状态（2026-07-26）：阶段 1–3 的最小可用范围已完成。
+> 正式路线读取 JDBC 发布图，Flyway、草稿乐观锁、校验、发布、回滚和持久化
+> 运营封闭已落地；Spring Security、正式数据范围授权和 Bean Validation
+> 留待生产化阶段。
 
 第一版技术结论：
 
@@ -21,7 +21,7 @@
 - 前端只展示后端返回的 `segments`、`transitions` 和 `steps`，不自行计算路线。
 - 不引入消息队列或 Redis。需要缓存时先使用进程内、按 `releaseId` 键控的不可变图缓存。
 
-当前内存 Demo 可以继续作为测试 fixture，但不能继续作为正式数据源。
+当前内存三层图仅作为测试 fixture，正式数据源为 PostgreSQL。
 
 ## 2. 推荐依赖
 
@@ -626,7 +626,7 @@ newReleaseDoesNotInheritOldOverride
 
 ### 阶段 2：PostgreSQL 持久化
 
-**状态：下一步**
+**状态：已完成**
 
 - 添加 Flyway 和 PostgreSQL 配置。
 - 实现 `JdbcPublishedGraphRepository`。
@@ -636,9 +636,11 @@ newReleaseDoesNotInheritOldOverride
 
 ### 阶段 3：维护端
 
+**状态：已完成最小可用版本**
+
 - 实现草稿复制和乐观锁。
 - 实现图元素维护和发布前校验。
 - 实现发布、回滚和临时运营覆盖。
 
-阶段 2 应先完成可重复迁移、发布图读取和覆盖规则读取，再扩展多医院权限后台
-或引入额外基础设施。
+下一步优先接入统一登录、多医院/楼栋数据权限、生产 PostgreSQL 回归测试和
+备份监控，不需要为当前运维规模拆分微服务或引入额外基础设施。

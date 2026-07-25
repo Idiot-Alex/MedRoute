@@ -5,6 +5,8 @@ import com.medroute.nav.dto.NavigationPoiSearchResponse;
 import com.medroute.nav.navigation.model.FloorSnapshot;
 import com.medroute.nav.navigation.model.NavigationGraph;
 import com.medroute.nav.navigation.model.PoiSnapshot;
+import com.medroute.nav.navigation.repository.PublishedGraphRepository;
+import com.medroute.nav.navigation.repository.PublishedGraphSnapshot;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
@@ -14,14 +16,17 @@ import java.util.UUID;
 
 @Service
 public class NavigationContextService {
-    private final InMemoryPublishedGraphService graphService;
+    private final PublishedGraphRepository graphRepository;
 
-    public NavigationContextService(InMemoryPublishedGraphService graphService) {
-        this.graphService = graphService;
+    public NavigationContextService(
+        PublishedGraphRepository graphRepository
+    ) {
+        this.graphRepository = graphRepository;
     }
 
     public NavigationContextResponse activeContext(UUID buildingId) {
-        NavigationGraph graph = graphService.activeGraph(buildingId);
+        PublishedGraphSnapshot snapshot = graphRepository.active(buildingId);
+        NavigationGraph graph = snapshot.graph();
         List<NavigationContextResponse.Floor> floors = graph.floors().values()
             .stream()
             .sorted(Comparator.comparingInt(FloorSnapshot::levelNo))
@@ -31,13 +36,13 @@ public class NavigationContextService {
         return new NavigationContextResponse(
             new NavigationContextResponse.Building(
                 graph.buildingId(),
-                "OUTPATIENT",
-                "门急诊楼"
+                snapshot.buildingCode(),
+                snapshot.buildingName()
             ),
             new NavigationContextResponse.Release(
                 graph.releaseId(),
-                "REL-TEST-001",
-                InMemoryPublishedGraphService.PUBLISHED_AT
+                snapshot.releaseCode(),
+                snapshot.publishedAt()
             ),
             floors,
             List.of("normal", "accessible")
@@ -50,7 +55,7 @@ public class NavigationContextService {
         UUID floorId,
         String category
     ) {
-        NavigationGraph graph = graphService.activeGraph(buildingId);
+        NavigationGraph graph = graphRepository.active(buildingId).graph();
         String normalizedKeyword = normalize(keyword);
         String normalizedCategory = normalize(category);
         List<NavigationPoiSearchResponse.Poi> items = graph.pois().values()

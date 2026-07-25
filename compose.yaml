@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${MEDROUTE_DB_NAME:-medroute}
+      POSTGRES_USER: ${MEDROUTE_DB_USER:-medroute}
+      POSTGRES_PASSWORD: ${MEDROUTE_DB_PASSWORD:-medroute}
+    ports:
+      - "${MEDROUTE_DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MEDROUTE_DB_USER:-medroute} -d ${MEDROUTE_DB_NAME:-medroute}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    volumes:
+      - medroute-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  medroute-postgres-data:

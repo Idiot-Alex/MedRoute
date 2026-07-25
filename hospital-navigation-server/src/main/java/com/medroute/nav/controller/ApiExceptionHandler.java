@@ -1,9 +1,13 @@
 package com.medroute.nav.controller;
 
 import com.medroute.nav.navigation.algorithm.RouteUnreachableException;
+import com.medroute.nav.navigation.service.DraftChangedException;
+import com.medroute.nav.navigation.service.DraftValidationFailedException;
 import com.medroute.nav.navigation.service.ForbiddenRouteModeException;
 import com.medroute.nav.navigation.service.NavigationResourceNotFoundException;
+import com.medroute.nav.navigation.service.OperationConflictException;
 import com.medroute.nav.navigation.service.PoiNotInReleaseException;
+import com.medroute.nav.navigation.service.ReleaseImmutableException;
 import com.medroute.nav.navigation.service.ReleaseMismatchException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -14,6 +18,7 @@ import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.NoHandlerFoundException;
@@ -124,6 +129,79 @@ public class ApiExceptionHandler {
                         + " but active release is " + error.activeReleaseId()
                 )
             )
+        );
+    }
+
+    @ExceptionHandler(DraftChangedException.class)
+    public ResponseEntity<ApiErrorResponse> handleDraftChanged(
+        DraftChangedException error,
+        HttpServletRequest request
+    ) {
+        return response(
+            HttpStatus.CONFLICT,
+            "DRAFT_CHANGED",
+            "草稿已被其他操作修改，请刷新后重试。",
+            request,
+            List.of(
+                new ErrorDetail(
+                    "If-Match",
+                    "expected revision " + error.expectedRevision()
+                        + " but current revision is " + error.actualRevision()
+                )
+            )
+        );
+    }
+
+    @ExceptionHandler(ReleaseImmutableException.class)
+    public ResponseEntity<ApiErrorResponse> handleReleaseImmutable(
+        ReleaseImmutableException error,
+        HttpServletRequest request
+    ) {
+        return response(
+            HttpStatus.CONFLICT,
+            "RELEASE_IMMUTABLE",
+            "已发布或已退役版本不可修改。",
+            request,
+            List.of(
+                new ErrorDetail(
+                    "releaseId",
+                    "release " + error.releaseId() + " is immutable"
+                )
+            )
+        );
+    }
+
+    @ExceptionHandler(DraftValidationFailedException.class)
+    public ResponseEntity<ApiErrorResponse> handleValidationFailed(
+        DraftValidationFailedException error,
+        HttpServletRequest request
+    ) {
+        List<ErrorDetail> details = error.validation().errors().stream()
+            .map(issue -> new ErrorDetail(issue.elementType(), issue.message()))
+            .toList();
+        return response(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "VALIDATION_FAILED",
+            "草稿未通过发布校验。",
+            request,
+            details
+        );
+    }
+
+    @ExceptionHandler({
+        OperationConflictException.class,
+        DataIntegrityViolationException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleOperationConflict(
+        Exception error,
+        HttpServletRequest request
+    ) {
+        return response(
+            HttpStatus.CONFLICT,
+            "OPERATION_CONFLICT",
+            "当前数据状态无法完成该操作。",
+            request,
+            List.of()
         );
     }
 

@@ -121,6 +121,9 @@
     if (/^https?:\/\//i.test(imageUrl)) {
       return imageUrl;
     }
+    if (imageUrl.startsWith("/api/")) {
+      return `${API_BASE}${imageUrl}`;
+    }
     return new URL(imageUrl, window.location.origin).toString();
   }
 

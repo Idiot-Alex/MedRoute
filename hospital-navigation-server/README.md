@@ -1,45 +1,66 @@
 # Hospital Navigation Server
 
-MedRoute 的 Spring Boot 后端。当前已完成“阶段 1：内存多楼层路线核心”，
-用于在接入 PostgreSQL 之前验证正式路线契约、跨层建模和路径算法。
+MedRoute 的 Spring Boot 后端。当前版本以 PostgreSQL 中的当前发布图作为正式导航
+数据源，并提供一套适合少量维护人员使用的地图编修、发布和运营 API。
 
-当前能力：
+## 当前能力
 
-- 三层楼栋内存发布图，使用固定 UUID 和 `releaseId`。
-- 显式建模电梯、楼梯、停靠点和跨层边，不根据设施编号推测停靠楼层。
-- 以 `timeSeconds` 为主成本、`distanceMeters` 为次级排序的 Dijkstra。
-- 支持 `normal` 和 `accessible`；未授权 `staff` 返回 `403`，
-  尚未定义成本规则的 `less_elevator` 返回 `400`。
-- 路线服务和测试 fixture 支持进程内临时关闭边或连接器；当前尚未提供运营管理 HTTP 入口。
-- 返回按楼层拆分的 `segments`、实际跨层动作 `transitions` 和文字 `steps`。
-- 提供当前发布图的导航上下文，供前端读取楼层底图、坐标系和可选 POI。
-- 正式路线接口响应携带 `X-Request-Id`；已映射的客户端错误和未预期服务端错误
-  使用统一的 `error` 对象。
+- PostgreSQL 16 + Flyway 管理地图目录、路网、发布版本、底图和运营状态。
+- 空数据库首次启动自动建表并初始化一栋三层门急诊楼测试数据。
+- 每层独立底图和像素坐标系，底图上传后生成不可变修订版。
+- 显式建模电梯、楼梯、停靠点和跨层连接，不推断设施能到达全部楼层。
+- 以时间为主成本、距离为次级排序的 Dijkstra。
+- 支持 `normal` 和 `accessible` 路线，返回楼层段、跨层动作和文字步骤。
+- 草稿复制、`ETag`/`If-Match` 乐观锁、结构校验、发布、回滚和草稿删除。
+- 路径、跨层连接或整组设施的定时/立即封闭及撤销。
+- 发布和回滚时按稳定公开 ID 迁移仍生效的运营封闭。
+- 统一客户端错误响应和 `X-Request-Id`。
 
-数据仍是进程内 fixture，不是数据库实现；发布、回滚、维护端和持久化运营状态
-属于下一阶段。
+内存三层图仅保留为算法单元测试 fixture，不再是正式运行时数据源。
 
-## API
+## 环境
 
-正式路线接口：
+项目以 Java 17 为编译基线。推荐直接使用 JDK 17；IDEA 的 Project SDK 和
+Maven Runner JDK 应保持一致。仓库自带 Maven Wrapper，不要求全局安装 Maven。
+
+后端默认连接：
+
+```text
+PostgreSQL: jdbc:postgresql://127.0.0.1:5432/medroute
+用户/密码: medroute / medroute
+HTTP: http://127.0.0.1:8080
+```
+
+连接信息可通过 `MEDROUTE_DB_URL`、`MEDROUTE_DB_USER`、
+`MEDROUTE_DB_PASSWORD` 和 `MEDROUTE_DB_POOL_SIZE` 覆盖。
+
+## 运行
+
+先在仓库根目录启动数据库：
+
+```bash
+docker compose up -d postgres
+```
+
+再启动后端：
+
+```bash
+cd hospital-navigation-server
+./mvnw spring-boot:run
+```
+
+Flyway 会在应用启动前校验并执行尚未应用的数据库迁移。
+
+## 导航 API
 
 ```http
+GET  /api/buildings/{buildingId}/navigation-context
+GET  /api/buildings/{buildingId}/pois
 POST /api/routes
-Content-Type: application/json
-X-Request-Id: req-local-demo
+GET  /api/map-images/{revisionId}
 ```
 
-导航页面先读取当前发布上下文：
-
-```http
-GET /api/buildings/00000000-0000-0000-0000-000000000100/navigation-context
-```
-
-该接口返回发布版本、楼层图片元数据和支持的路线模式。页面随后通过
-`GET /api/buildings/{buildingId}/pois` 读取同一发布版本的 POI。当前图片路径指向
-本仓库的测试底图，仅供 `hospital-map-demo/multifloor.html` 演示使用。
-
-可直接使用当前 fixture 中的 ID：
+可直接使用初始化数据验证跨层路线：
 
 ```json
 {
@@ -51,55 +72,53 @@ GET /api/buildings/00000000-0000-0000-0000-000000000100/navigation-context
 }
 ```
 
-该请求会从 `1F` 入口经仅停靠 `1F / 3F` 的 A 电梯到达 `3F` 超声医学科。
-响应摘要为 75 米、125 秒，并包含两个楼层段和一个跨层动作。
+该请求从 1F 门诊入口经只停靠 1F/3F 的 A 电梯到达 3F 超声医学科，基线摘要
+为 75 米、125 秒。
 
-以下单层数字 ID 接口暂时保留，供现有静态 Demo 兼容使用，不属于新的正式
-多楼层契约：
+## 维护 API
 
-- `GET /api/hospitals`
-- `GET /api/hospitals/{hospitalId}/floors/{floorId}/map`
-- `GET /api/hospitals/{hospitalId}/floors/{floorId}/graph`
-- `GET /api/hospitals/{hospitalId}/pois?keyword=药房`
+```http
+GET    /api/admin/buildings/{buildingId}/releases
+POST   /api/admin/buildings/{buildingId}/releases/drafts
+GET    /api/admin/releases/{releaseId}
+DELETE /api/admin/releases/{releaseId}
+PUT    /api/admin/releases/{releaseId}/workspace
+POST   /api/admin/releases/{releaseId}/floors/{floorId}/map
+POST   /api/admin/releases/{releaseId}/validate
+POST   /api/admin/releases/{releaseId}/publish
+POST   /api/admin/releases/{releaseId}/rollback
 
-正式契约以
-[`docs/05-接口设计.md`](../docs/05-接口设计.md)
-为准。
-
-## 环境
-
-需要 JDK 17 和 Maven 3.8 或更高版本：
-
-```bash
-java -version
-mvn -version
+GET    /api/admin/buildings/{buildingId}/operations/closures
+POST   /api/admin/buildings/{buildingId}/operations/closures
+DELETE /api/admin/operations/closures/{closureId}
 ```
 
-macOS 上如果 Maven 选中了其他 JDK，可在本次 shell 显式指定：
-
-```bash
-export JAVA_HOME=$(/usr/libexec/java_home -v 17)
-```
+草稿写入、底图替换、校验、发布和删除使用 `If-Match` 携带当前内容修订号。
+维护后台位于 `hospital-map-demo/admin.html`。
 
 ## 测试
 
 ```bash
-mvn test
+./mvnw test
 ```
 
-当前 JUnit 5 测试覆盖：
+测试环境使用 H2 PostgreSQL 兼容模式和同一组通用 Flyway 迁移，覆盖：
 
-- 时间优先、距离次级排序、长整型成本累计和单向边。
-- 普通/无障碍跨层路线、电梯停靠限制和连接器关闭后的备选路线。
-- 发布版本冲突、POI 版本归属、不可达路线。
-- 决策点文字步骤、正式 JSON 响应、错误码和 `X-Request-Id`。
-- 已发布地图的楼层、底图坐标系与 POI 导航上下文。
-- 保留的单层兼容路线服务。
+- 路线算法、单向边、无障碍过滤和长整型成本。
+- 电梯停靠限制、分楼层路线、版本冲突和不可达错误。
+- JDBC 发布图读取、底图上传和坐标缩放。
+- 草稿校验、发布、回滚、删除及运营封闭迁移。
+- 封闭设施后的备选路线和恢复后的最优路线。
 
-## 运行
+本地验收还应使用 Docker PostgreSQL 运行后端并在浏览器完成一次发布/回滚闭环。
 
-```bash
-mvn spring-boot:run
-```
+## 安全边界
 
-默认监听 `http://localhost:8080`。
+当前维护 API 通过 `X-Admin-User` 记录操作人，但尚未接入 Spring Security，
+该请求头不能视为身份认证。当前宽松 CORS 只适合本机或受控内网验收。生产部署前
+必须增加正式登录、角色和楼栋数据范围、HTTPS、反向代理及受控 CORS。
+
+正式契约和操作步骤见：
+
+- [`docs/05-接口设计.md`](../docs/05-接口设计.md)
+- [`docs/10-地图维护与发布操作手册.md`](../docs/10-地图维护与发布操作手册.md)

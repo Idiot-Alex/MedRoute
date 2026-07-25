@@ -9,6 +9,8 @@ This directory contains the phase-one single-floor route guidance demo.
 - `graph-data.js`: floor metadata, default route, path nodes, path edges, and POIs.
 - `multifloor.html`: calls the multi-floor backend contract and renders the returned route over per-floor images.
 - `multifloor.js` / `multifloor.css`: backend integration and responsive map tool UI.
+- `admin.html` / `admin.js` / `admin.css`: persistent multi-floor map authoring,
+  validation, publishing, rollback, and operation-closure workspace.
 - `assets/hndfsrmyy/`: clearly marked local test floor-plan assets and source notes.
 
 ## Run Locally
@@ -24,16 +26,35 @@ repository root and open:
 http://127.0.0.1:4173/hospital-map-demo/multifloor.html
 ```
 
+Serve the repository root with:
+
+```bash
+python3 -m http.server 4173
+```
+
+The map-maintenance workspace is available at:
+
+```text
+http://127.0.0.1:4173/hospital-map-demo/admin.html
+```
+
 The default backend address is `http://127.0.0.1:8080`. To use a different one:
 
 ```text
 multifloor.html?api=http://127.0.0.1:8080
+admin.html?api=http://127.0.0.1:8080
 ```
 
 The page reads `GET /api/buildings/{buildingId}/navigation-context` for floors,
 image dimensions, and the active `releaseId`, then reads
 `GET /api/buildings/{buildingId}/pois` from the same release before sending route
 requests to `POST /api/routes`. It does not duplicate route calculation in the browser.
+
+The admin page reads and writes release workspaces through `/api/admin`. It edits
+drafts only, uploads a separate PNG/JPEG for each floor, validates before publish,
+can reactivate a historical release, and manages temporary route or connector
+closures. PostgreSQL and the backend are required; admin edits are not kept only
+in browser memory.
 
 To load graph data from the phase-two backend instead of `graph-data.js`, run the server and open:
 
@@ -69,7 +90,9 @@ system; loading arbitrary floor-plan artwork is outside the current Demo scope.
 `multifloor.html` is a separate, explicitly test-only surface. Its three images
 use a `1000 × 800` coordinate system, and its source, permissions caveat, and
 synthetic connector assumptions are documented in `assets/hndfsrmyy/README.md`.
-The old single-floor page remains unchanged for graph-editor work.
+The persistent admin workspace can replace each floor image and uses the actual
+image dimensions returned by the backend. The old single-floor page remains for
+prototype graph-editor work.
 
 The editor supports maintaining operational path edge fields:
 

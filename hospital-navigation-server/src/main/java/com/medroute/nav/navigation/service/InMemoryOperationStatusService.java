@@ -1,13 +1,11 @@
 package com.medroute.nav.navigation.service;
 
-import org.springframework.stereotype.Service;
-
+import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-@Service
-public class InMemoryOperationStatusService {
+public class InMemoryOperationStatusService implements OperationStatusProvider {
     private final Set<UUID> closedConnectorIds = ConcurrentHashMap.newKeySet();
     private final Set<UUID> closedElementIds = ConcurrentHashMap.newKeySet();
 
@@ -17,6 +15,18 @@ public class InMemoryOperationStatusService {
 
     public Set<UUID> closedElementIds() {
         return Set.copyOf(closedElementIds);
+    }
+
+    @Override
+    public OperationStatusSnapshot status(
+        UUID buildingId,
+        UUID releaseId,
+        Instant effectiveAt
+    ) {
+        return new OperationStatusSnapshot(
+            closedElementIds(),
+            closedConnectorIds()
+        );
     }
 
     public void closeConnector(UUID connectorId) {
