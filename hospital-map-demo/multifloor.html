@@ -5,20 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta
       name="description"
-      content="MedRoute 多楼层医院路线测试页面"
+      content="MedRoute 医院室内路线导航"
     >
-    <title>MedRoute 多楼层路线测试</title>
-    <link rel="stylesheet" href="./multifloor.css">
-    <script defer src="./multifloor.js"></script>
+    <title>MedRoute 医院室内导航</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="./multifloor.css?v=20260726-1">
+    <script defer src="./multifloor.js?v=20260726-1"></script>
   </head>
   <body>
     <div class="app-shell" data-page-state="loading">
       <header class="app-header">
-        <div>
-          <p class="product-name">MedRoute</p>
-          <h1>多楼层路线测试</h1>
+        <div class="app-identity">
+          <span class="brand-mark" aria-hidden="true">M</span>
+          <div>
+            <p class="product-name">MedRoute</p>
+            <h1 id="building-name">医院室内导航</h1>
+          </div>
         </div>
-        <p id="connection-status" class="connection-status" aria-live="polite">
+        <p
+          id="connection-status"
+          class="connection-status"
+          data-state="loading"
+          aria-live="polite"
+        >
           正在连接导航服务
         </p>
       </header>
@@ -26,23 +35,39 @@
       <main class="workspace">
         <section class="control-panel" aria-labelledby="route-form-title">
           <div class="panel-heading">
-            <h2 id="route-form-title">路线设置</h2>
+            <h2 id="route-form-title">去哪儿</h2>
+            <p>选择院内地点</p>
           </div>
 
           <form id="route-form" novalidate>
-            <div class="field-group">
-              <label for="start-poi">起点</label>
-              <select id="start-poi" name="startPoiId" disabled></select>
-            </div>
+            <div class="route-endpoints">
+              <div class="endpoint-field">
+                <span class="endpoint-mark is-start" aria-hidden="true">起</span>
+                <div class="field-group">
+                  <label for="start-poi">起点</label>
+                  <select id="start-poi" name="startPoiId" disabled></select>
+                </div>
+              </div>
 
-            <div class="field-group">
-              <label for="end-poi">终点</label>
-              <select id="end-poi" name="endPoiId" disabled></select>
-            </div>
+              <button
+                id="swap-route"
+                class="swap-action"
+                type="button"
+                aria-label="互换起点和终点"
+                title="互换起点和终点"
+                disabled
+              >
+                <span aria-hidden="true">⇅</span>
+              </button>
 
-            <button id="swap-route" class="text-action" type="button" disabled>
-              互换起终点
-            </button>
+              <div class="endpoint-field">
+                <span class="endpoint-mark is-end" aria-hidden="true">终</span>
+                <div class="field-group">
+                  <label for="end-poi">终点</label>
+                  <select id="end-poi" name="endPoiId" disabled></select>
+                </div>
+              </div>
+            </div>
 
             <fieldset class="mode-fieldset">
               <legend>路线偏好</legend>
@@ -73,50 +98,74 @@
             </button>
             <p id="form-message" class="form-message" aria-live="polite"></p>
           </form>
-
-          <div class="testing-notice">
-            <p>测试数据</p>
-            <span>
-              路线、连接关系和 A/B 编号均为项目示例，不能作为医院导诊依据。
-            </span>
-          </div>
         </section>
 
         <section class="map-panel" aria-labelledby="map-title">
           <div class="map-toolbar">
-            <div>
+            <div class="map-title-group">
               <h2 id="map-title">楼层路线图</h2>
               <p id="floor-caption">正在加载底图</p>
             </div>
-            <div id="floor-tabs" class="floor-tabs" role="tablist" aria-label="选择楼层"></div>
+            <div class="map-actions">
+              <div
+                id="floor-tabs"
+                class="floor-tabs"
+                role="tablist"
+                aria-label="选择楼层"
+              ></div>
+              <button
+                id="expand-map"
+                class="icon-action"
+                type="button"
+                aria-label="全屏查看地图"
+                title="全屏查看地图"
+              >
+                <span id="expand-map-icon" aria-hidden="true">⛶</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="route-brief" class="route-brief" aria-live="polite" hidden>
+            <div>
+              <strong id="route-brief-title"></strong>
+              <span id="route-brief-meta"></span>
+            </div>
+            <button id="show-route-steps" class="brief-action" type="button">
+              查看步骤
+            </button>
           </div>
 
           <div id="map-frame" class="map-frame is-loading">
-            <img id="floor-image" alt="">
-            <svg
-              id="route-overlay"
-              class="route-overlay"
-              viewBox="0 0 1000 800"
-              preserveAspectRatio="xMidYMid meet"
-              aria-hidden="true"
-            ></svg>
+            <div id="map-canvas" class="map-canvas">
+              <img id="floor-image" alt="">
+              <svg
+                id="route-overlay"
+                class="route-overlay"
+                viewBox="0 0 1000 800"
+                preserveAspectRatio="xMidYMid meet"
+                aria-hidden="true"
+              ></svg>
+            </div>
             <p id="map-empty-state" class="map-empty-state" hidden></p>
           </div>
 
           <div id="floor-transition" class="floor-transition" aria-live="polite"></div>
 
           <p class="source-note">
-            底图来源：
-            <a href="http://www.hndfsrmyy.com/w/155.html" target="_blank" rel="noreferrer">
-              东方市人民医院公开楼层分布页
-            </a>
-            ，仅用于本地测试。
+            <span>测试路线不能作为现场导诊依据。</span>
+            <span>
+              底图参考
+              <a href="http://www.hndfsrmyy.com/w/155.html" target="_blank" rel="noreferrer">
+                东方市人民医院公开楼层分布页
+              </a>
+              。
+            </span>
           </p>
         </section>
 
         <section class="route-panel" aria-labelledby="route-result-title">
           <div class="panel-heading">
-            <h2 id="route-result-title">路线结果</h2>
+            <h2 id="route-result-title">详细步骤</h2>
             <p id="route-mode-label">尚未计算</p>
           </div>
 

@@ -5,7 +5,12 @@
   const DEFAULT_BUILDING_ID = "00000000-0000-0000-0000-000000000100";
   const query = new URLSearchParams(window.location.search);
   const apiBase = (query.get("api") || DEFAULT_API_BASE).replace(/\/$/, "");
-  const buildingId = query.get("buildingId") || DEFAULT_BUILDING_ID;
+  const buildingId =
+    query.get("buildingId") || query.get("building") || DEFAULT_BUILDING_ID;
+  const requestedStartPoi =
+    query.get("startPoi") || query.get("startPoiCode") || "";
+  const requestedEndPoi =
+    query.get("endPoi") || query.get("endPoiCode") || "";
   const svgNamespace = "http://www.w3.org/2000/svg";
 
   const state = {
@@ -18,6 +23,7 @@
 
   const elements = {
     app: document.querySelector(".app-shell"),
+    buildingName: document.querySelector("#building-name"),
     connectionStatus: document.querySelector("#connection-status"),
     routeForm: document.querySelector("#route-form"),
     startPoi: document.querySelector("#start-poi"),
@@ -28,11 +34,20 @@
     modeButtons: [...document.querySelectorAll("[data-route-mode]")],
     floorCaption: document.querySelector("#floor-caption"),
     floorTabs: document.querySelector("#floor-tabs"),
+    mapPanel: document.querySelector(".map-panel"),
     mapFrame: document.querySelector("#map-frame"),
+    mapCanvas: document.querySelector("#map-canvas"),
     floorImage: document.querySelector("#floor-image"),
     routeOverlay: document.querySelector("#route-overlay"),
     mapEmptyState: document.querySelector("#map-empty-state"),
     floorTransition: document.querySelector("#floor-transition"),
+    expandMap: document.querySelector("#expand-map"),
+    expandMapIcon: document.querySelector("#expand-map-icon"),
+    routeBrief: document.querySelector("#route-brief"),
+    routeBriefTitle: document.querySelector("#route-brief-title"),
+    routeBriefMeta: document.querySelector("#route-brief-meta"),
+    showRouteSteps: document.querySelector("#show-route-steps"),
+    routePanel: document.querySelector(".route-panel"),
     routeModeLabel: document.querySelector("#route-mode-label"),
     routeSummary: document.querySelector("#route-summary"),
     routeSteps: document.querySelector("#route-steps"),
@@ -43,7 +58,11 @@
   }
 
   async function fetchJson(path, options) {
-    const response = await fetch(requestUrl(path), options);
+    const requestOptions = { ...(options || {}) };
+    if (!requestOptions.method || requestOptions.method.toUpperCase() === "GET") {
+      requestOptions.cache = "no-store";
+    }
+    const response = await fetch(requestUrl(path), requestOptions);
     const body = await response.json().catch(() => null);
     if (!response.ok) {
       const detail = body && body.error && body.error.message;
@@ -73,9 +92,19 @@
 
   function populatePoiSelects() {
     const orderedPois = state.context.pois;
+    const findPoi = (reference) =>
+      orderedPois.find(
+        (poi) =>
+          poi.id === reference ||
+          String(poi.code || "").toLowerCase() === reference.toLowerCase()
+      );
     const defaults = {
-      start: orderedPois.find((poi) => poi.code === "P-ENTRANCE") || orderedPois[0],
+      start:
+        findPoi(requestedStartPoi) ||
+        orderedPois.find((poi) => poi.code === "P-ENTRANCE") ||
+        orderedPois[0],
       end:
+        findPoi(requestedEndPoi) ||
         orderedPois.find((poi) => poi.code === "P-ULTRASOUND-3F") ||
         orderedPois[orderedPois.length - 1],
     };
@@ -122,7 +151,7 @@
       return imageUrl;
     }
     if (imageUrl.startsWith("/api/")) {
-      return `${API_BASE}${imageUrl}`;
+      return `${apiBase}${imageUrl}`;
     }
     return new URL(imageUrl, window.location.origin).toString();
   }
@@ -206,16 +235,44 @@
 
     elements.floorCaption.textContent =
       floor.name === floor.code ? floor.code : `${floor.code} ${floor.name}`;
-    elements.floorImage.src = resolveImageUrl(floor.imageUrl);
-    elements.floorImage.alt = `${floor.code} 测试楼层分布图`;
+    const imageUrl = resolveImageUrl(floor.imageUrl);
+    if (elements.floorImage.dataset.imageUrl !== imageUrl) {
+      elements.mapFrame.classList.add("is-loading");
+      elements.floorImage.dataset.imageUrl = imageUrl;
+      elements.floorImage.dataset.loadState = "loading";
+      elements.floorImage.onload = () => {
+        if (elements.floorImage.dataset.imageUrl !== imageUrl) {
+          return;
+        }
+        elements.floorImage.dataset.loadState = "ready";
+        elements.mapFrame.classList.remove("is-loading");
+      };
+      elements.floorImage.onerror = () => {
+        if (elements.floorImage.dataset.imageUrl !== imageUrl) {
+          return;
+        }
+        elements.floorImage.dataset.loadState = "error";
+        elements.mapFrame.classList.remove("is-loading");
+        elements.mapEmptyState.textContent = "该楼层底图加载失败。";
+        elements.mapEmptyState.hidden = false;
+      };
+      elements.floorImage.src = imageUrl;
+    } else if (
+      elements.floorImage.complete &&
+      elements.floorImage.naturalWidth > 0
+    ) {
+      elements.mapFrame.classList.remove("is-loading");
+    }
+    elements.floorImage.alt = `${floor.code} ${floor.name} 楼层分布图`;
     elements.routeOverlay.replaceChildren();
     elements.routeOverlay.setAttribute("viewBox", `0 0 ${width} ${height}`);
-    elements.mapFrame.classList.remove("is-loading");
     renderFloorTabs();
     renderFloorTransition(floor.id);
 
     if (!state.route) {
-      elements.mapEmptyState.hidden = true;
+      if (elements.floorImage.dataset.loadState !== "error") {
+        elements.mapEmptyState.hidden = true;
+      }
       return;
     }
 
@@ -256,6 +313,8 @@
 
   function renderRouteSummary() {
     if (!state.route) {
+      elements.app.classList.remove("has-route");
+      elements.routeBrief.hidden = true;
       elements.routeModeLabel.textContent = "尚未计算";
       elements.routeSummary.classList.add("is-empty");
       elements.routeSummary.replaceChildren();
@@ -266,6 +325,7 @@
       return;
     }
 
+    elements.app.classList.add("has-route");
     const summary = state.route.summary;
     const startName = state.route.startPoi.name;
     const endName = state.route.endPoi.name;
@@ -283,6 +343,7 @@
     routeText.className = "summary-route";
     routeText.textContent = `${startName} 至 ${endName}`;
     elements.routeSummary.append(summaryGrid, routeText);
+    renderRouteBrief();
 
     elements.routeSteps.replaceChildren();
     state.route.steps.forEach((step) => {
@@ -304,6 +365,32 @@
       item.append(index, content);
       elements.routeSteps.append(item);
     });
+  }
+
+  function renderRouteBrief() {
+    const summary = state.route.summary;
+    const floorCodes = [
+      ...new Set(
+        state.route.segments.map((segment) => {
+          const floor = state.context.floors.find(
+            (candidate) => candidate.id === segment.floorId
+          );
+          return floor ? floor.code : "跨层";
+        })
+      ),
+    ];
+    const floorText =
+      floorCodes.length > 1
+        ? `${floorCodes[0]} → ${floorCodes[floorCodes.length - 1]}`
+        : `${floorCodes[0] || "当前楼层"} 同层`;
+    const firstTransition = state.route.transitions[0];
+    elements.routeBriefTitle.textContent =
+      `${formatDuration(summary.estimatedSeconds)} · ` +
+      `${formatDistance(summary.distanceMeters)} 米`;
+    elements.routeBriefMeta.textContent = firstTransition
+      ? `${floorText} · ${firstTransition.instruction}`
+      : `${floorText}路线`;
+    elements.routeBrief.hidden = false;
   }
 
   function summaryItem(label, value) {
@@ -336,6 +423,50 @@
     return startSegment ? startSegment.floorId : state.context.floors[0].id;
   }
 
+  function clearRoute() {
+    state.route = null;
+    elements.formMessage.textContent = "";
+    if (!state.context) {
+      return;
+    }
+    renderRouteSummary();
+    renderMap();
+  }
+
+  function setMapExpanded(expanded) {
+    elements.mapPanel.classList.toggle("is-expanded", expanded);
+    document.body.classList.toggle("map-expanded", expanded);
+    elements.expandMap.setAttribute(
+      "aria-label",
+      expanded ? "退出全屏地图" : "全屏查看地图"
+    );
+    elements.expandMap.title = expanded ? "退出全屏地图" : "全屏查看地图";
+    elements.expandMapIcon.textContent = expanded ? "×" : "⛶";
+    if (expanded) {
+      window.requestAnimationFrame(() => {
+        elements.mapFrame.scrollLeft =
+          (elements.mapCanvas.scrollWidth - elements.mapFrame.clientWidth) / 2;
+        elements.mapFrame.scrollTop =
+          (elements.mapCanvas.scrollHeight - elements.mapFrame.clientHeight) / 2;
+      });
+    }
+  }
+
+  function scrollMapIntoView() {
+    if (!window.matchMedia("(max-width: 760px)").matches) {
+      return;
+    }
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+    window.requestAnimationFrame(() => {
+      elements.mapPanel.scrollIntoView({
+        behavior: reducedMotion ? "auto" : "smooth",
+        block: "start",
+      });
+    });
+  }
+
   async function calculateRoute() {
     if (state.loadingRoute) {
       return;
@@ -345,9 +476,12 @@
       return;
     }
 
+    clearRoute();
     state.loadingRoute = true;
     elements.formMessage.textContent = "正在向后端计算路线。";
-    elements.calculateRoute.disabled = true;
+    elements.routeForm.setAttribute("aria-busy", "true");
+    elements.calculateRoute.textContent = "正在规划";
+    setControlsDisabled(true);
     try {
       const route = await fetchJson("/api/routes", {
         method: "POST",
@@ -365,17 +499,21 @@
       elements.formMessage.textContent = "";
       renderRouteSummary();
       renderMap();
+      scrollMapIntoView();
     } catch (error) {
       elements.formMessage.textContent = error.message || "路线计算失败。";
     } finally {
       state.loadingRoute = false;
-      elements.calculateRoute.disabled = false;
+      elements.routeForm.removeAttribute("aria-busy");
+      elements.calculateRoute.textContent = "规划路线";
+      setControlsDisabled(false);
     }
   }
 
   async function loadContext() {
     setControlsDisabled(true);
     elements.connectionStatus.textContent = "正在读取已发布导航数据";
+    elements.connectionStatus.dataset.state = "loading";
     try {
       const publishedContext = await fetchJson(
         `/api/buildings/${encodeURIComponent(buildingId)}/navigation-context`
@@ -388,6 +526,7 @@
       }
       const context = {
         buildingId: publishedContext.building.id,
+        buildingName: publishedContext.building.name,
         releaseId: publishedContext.release.id,
         supportedRouteModes: publishedContext.supportedRouteModes,
         floors: publishedContext.floors.map((floor) => ({
@@ -405,14 +544,18 @@
       }
       state.context = context;
       state.selectedFloorId = context.floors[0].id;
+      elements.buildingName.textContent = context.buildingName || "医院室内导航";
       populatePoiSelects();
       renderRouteSummary();
       renderMap();
       setControlsDisabled(false);
-      elements.connectionStatus.textContent = `已加载 ${context.floors.length} 层和 ${context.pois.length} 个测试地点`;
+      elements.connectionStatus.textContent =
+        `${context.floors.length} 层 · ${context.pois.length} 个地点`;
+      elements.connectionStatus.dataset.state = "ready";
       elements.app.dataset.pageState = "ready";
     } catch (error) {
       elements.connectionStatus.textContent = "无法连接导航服务";
+      elements.connectionStatus.dataset.state = "error";
       elements.formMessage.textContent = `${error.message || "读取导航数据失败。"} 请确认后端已重启并监听 ${apiBase}。`;
       elements.mapEmptyState.textContent = "后端服务不可用，暂时无法加载测试底图。";
       elements.mapEmptyState.hidden = false;
@@ -430,12 +573,42 @@
     const previousStart = elements.startPoi.value;
     elements.startPoi.value = elements.endPoi.value;
     elements.endPoi.value = previousStart;
+    clearRoute();
+  });
+
+  [elements.startPoi, elements.endPoi].forEach((select) => {
+    select.addEventListener("change", clearRoute);
   });
 
   elements.modeButtons.forEach((button) => {
     button.addEventListener("click", () => {
+      if (button.dataset.routeMode === state.routeMode) {
+        return;
+      }
       setRouteMode(button.dataset.routeMode);
+      clearRoute();
     });
+  });
+
+  elements.expandMap.addEventListener("click", () => {
+    setMapExpanded(!elements.mapPanel.classList.contains("is-expanded"));
+  });
+
+  elements.showRouteSteps.addEventListener("click", () => {
+    setMapExpanded(false);
+    window.requestAnimationFrame(() => {
+      elements.routePanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      elements.mapPanel.classList.contains("is-expanded")
+    ) {
+      setMapExpanded(false);
+      elements.expandMap.focus();
+    }
   });
 
   void loadContext();

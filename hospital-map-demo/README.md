@@ -7,9 +7,9 @@ This directory contains the phase-one single-floor route guidance demo.
 - `index.html`: UI, SVG map rendering, route calculation, and step rendering.
 - `editor.html`: minimal graph editor for nodes, edges, POIs, and JSON export.
 - `graph-data.js`: floor metadata, default route, path nodes, path edges, and POIs.
-- `multifloor.html`: calls the multi-floor backend contract and renders the returned route over per-floor images.
+- `multifloor.html`: mobile-first navigation UI that renders the backend route over per-floor images.
 - `multifloor.js` / `multifloor.css`: backend integration and responsive map tool UI.
-- `admin.html` / `admin.js` / `admin.css`: persistent multi-floor map authoring,
+- `admin.html` / `admin.js` / `admin.css`: desktop-first persistent multi-floor map authoring,
   validation, publishing, rollback, and operation-closure workspace.
 - `assets/hndfsrmyy/`: clearly marked local test floor-plan assets and source notes.
 
