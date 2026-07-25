@@ -25,7 +25,7 @@ import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.
 import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.ELEVATOR_A_ID;
 import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.ELEVATOR_B_ID;
 import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.POI_ENTRANCE_ID;
-import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.POI_PHARMACY_3F_ID;
+import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.POI_ULTRASOUND_3F_ID;
 import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.RELEASE_ID;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -114,7 +114,7 @@ class RouteControllerIntegrationTest {
             BUILDING_ID,
             RELEASE_ID,
             POI_ENTRANCE_ID,
-            POI_PHARMACY_3F_ID
+            POI_ULTRASOUND_3F_ID
         );
 
         mockMvc.perform(
@@ -206,7 +206,7 @@ class RouteControllerIntegrationTest {
             UUID.fromString("00000000-0000-0000-0000-999999999997"),
             RELEASE_ID,
             POI_ENTRANCE_ID,
-            POI_PHARMACY_3F_ID,
+            POI_ULTRASOUND_3F_ID,
             RouteMode.NORMAL
         );
 
@@ -290,7 +290,7 @@ class RouteControllerIntegrationTest {
             BUILDING_ID,
             expectedReleaseId,
             POI_ENTRANCE_ID,
-            POI_PHARMACY_3F_ID,
+            POI_ULTRASOUND_3F_ID,
             routeMode
         );
     }

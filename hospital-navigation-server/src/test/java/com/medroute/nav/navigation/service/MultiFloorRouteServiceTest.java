@@ -22,7 +22,7 @@ import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.
 import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.FLOOR_3_ID;
 import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.POI_CLINIC_2F_ID;
 import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.POI_ENTRANCE_ID;
-import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.POI_PHARMACY_3F_ID;
+import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.POI_ULTRASOUND_3F_ID;
 import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.RELEASE_ID;
 import static com.medroute.nav.navigation.service.InMemoryPublishedGraphService.STAIRS_ID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -50,7 +50,7 @@ class MultiFloorRouteServiceTest {
     void normalRouteUsesTheFasterAdjacentFloorStairs() {
         NavigationRouteResponse response = route(
             POI_ENTRANCE_ID,
-            POI_PHARMACY_3F_ID,
+            POI_ULTRASOUND_3F_ID,
             RouteMode.NORMAL
         );
 
@@ -72,7 +72,7 @@ class MultiFloorRouteServiceTest {
     void accessibleRouteUsesElevatorAWithoutInventingASecondFloorStop() {
         NavigationRouteResponse response = route(
             POI_ENTRANCE_ID,
-            POI_PHARMACY_3F_ID,
+            POI_ULTRASOUND_3F_ID,
             RouteMode.ACCESSIBLE
         );
 
@@ -96,13 +96,14 @@ class MultiFloorRouteServiceTest {
     void generatesDecisionPointStepsWithoutExposingInternalNodeCodes() {
         NavigationRouteResponse response = route(
             POI_ENTRANCE_ID,
-            POI_PHARMACY_3F_ID,
+            POI_ULTRASOUND_3F_ID,
             RouteMode.ACCESSIBLE
         );
 
         assertEquals(
             List.of(
                 "start",
+                "turn",
                 "approach",
                 "transition",
                 "continue",
@@ -117,7 +118,11 @@ class MultiFloorRouteServiceTest {
             "乘 A 电梯至 3F。",
             response.transitions().get(0).instruction()
         );
-        assertEquals("前往 A 电梯。", response.steps().get(1).instruction());
+        assertTrue(
+            response.steps().stream()
+                .map(NavigationRouteResponse.RouteStep::instruction)
+                .anyMatch("前往 A 电梯。"::equals)
+        );
         assertTrue(
             response.steps().stream()
                 .map(NavigationRouteResponse.RouteStep::instruction)
@@ -153,7 +158,7 @@ class MultiFloorRouteServiceTest {
 
         NavigationRouteResponse response = route(
             POI_ENTRANCE_ID,
-            POI_PHARMACY_3F_ID,
+            POI_ULTRASOUND_3F_ID,
             RouteMode.ACCESSIBLE
         );
 
@@ -190,7 +195,7 @@ class MultiFloorRouteServiceTest {
             RouteUnreachableException.class,
             () -> route(
                 POI_ENTRANCE_ID,
-                POI_PHARMACY_3F_ID,
+                POI_ULTRASOUND_3F_ID,
                 RouteMode.ACCESSIBLE
             )
         );
@@ -202,7 +207,7 @@ class MultiFloorRouteServiceTest {
             BUILDING_ID,
             UUID.fromString("00000000-0000-0000-0000-999999999999"),
             POI_ENTRANCE_ID,
-            POI_PHARMACY_3F_ID,
+            POI_ULTRASOUND_3F_ID,
             RouteMode.ACCESSIBLE
         );
 

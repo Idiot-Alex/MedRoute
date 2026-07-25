@@ -41,7 +41,7 @@ public class InMemoryPublishedGraphService {
     public static final UUID POI_ENTRANCE_ID = uuid("00003001");
     public static final UUID POI_REGISTRATION_ID = uuid("00003002");
     public static final UUID POI_CLINIC_2F_ID = uuid("00003003");
-    public static final UUID POI_PHARMACY_3F_ID = uuid("00003004");
+    public static final UUID POI_ULTRASOUND_3F_ID = uuid("00003004");
 
     public static final UUID ELEVATOR_A_ID = uuid("00004001");
     public static final UUID ELEVATOR_B_ID = uuid("00004002");
@@ -65,7 +65,12 @@ public class InMemoryPublishedGraphService {
     private static final UUID NODE_3F_ELEVATOR_A = uuid("00002022");
     private static final UUID NODE_3F_ELEVATOR_B = uuid("00002023");
     private static final UUID NODE_3F_STAIRS = uuid("00002024");
-    private static final UUID NODE_3F_PHARMACY = uuid("00002025");
+    private static final UUID NODE_3F_ULTRASOUND = uuid("00002025");
+
+    // Test-only assets are stored with the static Demo. Production releases
+    // should point to a controlled asset store through FloorMapRevision.
+    private static final String TEST_MAP_BASE_PATH =
+        "/hospital-map-demo/assets/hndfsrmyy/";
 
     private final NavigationGraph graph;
 
@@ -103,35 +108,53 @@ public class InMemoryPublishedGraphService {
         Map<UUID, FloorSnapshot> floors = new LinkedHashMap<>();
         floors.put(
             FLOOR_1_ID,
-            floor(FLOOR_1_ID, "1F", 1, uuid("00001101"), "/maps/outpatient/1f.png")
+            floor(
+                FLOOR_1_ID,
+                "1F",
+                1,
+                uuid("00001101"),
+                TEST_MAP_BASE_PATH + "outpatient-1f.jpg"
+            )
         );
         floors.put(
             FLOOR_2_ID,
-            floor(FLOOR_2_ID, "2F", 2, uuid("00001102"), "/maps/outpatient/2f.png")
+            floor(
+                FLOOR_2_ID,
+                "2F",
+                2,
+                uuid("00001102"),
+                TEST_MAP_BASE_PATH + "outpatient-2f.jpg"
+            )
         );
         floors.put(
             FLOOR_3_ID,
-            floor(FLOOR_3_ID, "3F", 3, uuid("00001103"), "/maps/outpatient/3f.png")
+            floor(
+                FLOOR_3_ID,
+                "3F",
+                3,
+                uuid("00001103"),
+                TEST_MAP_BASE_PATH + "outpatient-3f.jpg"
+            )
         );
 
         Map<UUID, GraphNode> nodes = new LinkedHashMap<>();
-        addNode(nodes, NODE_1F_ENTRANCE, "N-1F-ENTRANCE", FLOOR_1_ID, 100, 300, "entrance");
-        addNode(nodes, NODE_1F_HUB, "N-1F-HUB", FLOOR_1_ID, 350, 300, "normal");
-        addNode(nodes, NODE_1F_ELEVATOR_A, "N-1F-ELEV-A", FLOOR_1_ID, 560, 220, "elevator");
-        addNode(nodes, NODE_1F_ELEVATOR_B, "N-1F-ELEV-B", FLOOR_1_ID, 560, 320, "elevator");
-        addNode(nodes, NODE_1F_STAIRS, "N-1F-STAIRS", FLOOR_1_ID, 560, 420, "stairs");
-        addNode(nodes, NODE_1F_ONE_WAY, "N-1F-ONE-WAY", FLOOR_1_ID, 350, 500, "normal");
+        addNode(nodes, NODE_1F_ENTRANCE, "N-1F-ENTRANCE", FLOOR_1_ID, 500, 775, "entrance");
+        addNode(nodes, NODE_1F_HUB, "N-1F-HUB", FLOOR_1_ID, 500, 435, "normal");
+        addNode(nodes, NODE_1F_ELEVATOR_A, "N-1F-ELEV-A", FLOOR_1_ID, 235, 385, "elevator");
+        addNode(nodes, NODE_1F_ELEVATOR_B, "N-1F-ELEV-B", FLOOR_1_ID, 770, 385, "elevator");
+        addNode(nodes, NODE_1F_STAIRS, "N-1F-STAIRS", FLOOR_1_ID, 770, 385, "stairs");
+        addNode(nodes, NODE_1F_ONE_WAY, "N-1F-ONE-WAY", FLOOR_1_ID, 500, 300, "normal");
 
-        addNode(nodes, NODE_2F_HUB, "N-2F-HUB", FLOOR_2_ID, 350, 300, "normal");
-        addNode(nodes, NODE_2F_ELEVATOR_B, "N-2F-ELEV-B", FLOOR_2_ID, 560, 320, "elevator");
-        addNode(nodes, NODE_2F_STAIRS, "N-2F-STAIRS", FLOOR_2_ID, 560, 420, "stairs");
-        addNode(nodes, NODE_2F_CLINIC, "N-2F-CLINIC", FLOOR_2_ID, 150, 220, "normal");
+        addNode(nodes, NODE_2F_HUB, "N-2F-HUB", FLOOR_2_ID, 500, 435, "normal");
+        addNode(nodes, NODE_2F_ELEVATOR_B, "N-2F-ELEV-B", FLOOR_2_ID, 770, 385, "elevator");
+        addNode(nodes, NODE_2F_STAIRS, "N-2F-STAIRS", FLOOR_2_ID, 770, 385, "stairs");
+        addNode(nodes, NODE_2F_CLINIC, "N-2F-LAB", FLOOR_2_ID, 365, 185, "department");
 
-        addNode(nodes, NODE_3F_HUB, "N-3F-HUB", FLOOR_3_ID, 350, 300, "normal");
-        addNode(nodes, NODE_3F_ELEVATOR_A, "N-3F-ELEV-A", FLOOR_3_ID, 560, 220, "elevator");
-        addNode(nodes, NODE_3F_ELEVATOR_B, "N-3F-ELEV-B", FLOOR_3_ID, 560, 320, "elevator");
-        addNode(nodes, NODE_3F_STAIRS, "N-3F-STAIRS", FLOOR_3_ID, 560, 420, "stairs");
-        addNode(nodes, NODE_3F_PHARMACY, "N-3F-PHARMACY", FLOOR_3_ID, 150, 220, "normal");
+        addNode(nodes, NODE_3F_HUB, "N-3F-HUB", FLOOR_3_ID, 500, 435, "normal");
+        addNode(nodes, NODE_3F_ELEVATOR_A, "N-3F-ELEV-A", FLOOR_3_ID, 235, 385, "elevator");
+        addNode(nodes, NODE_3F_ELEVATOR_B, "N-3F-ELEV-B", FLOOR_3_ID, 770, 385, "elevator");
+        addNode(nodes, NODE_3F_STAIRS, "N-3F-STAIRS", FLOOR_3_ID, 770, 385, "stairs");
+        addNode(nodes, NODE_3F_ULTRASOUND, "N-3F-ULTRASOUND", FLOOR_3_ID, 300, 560, "department");
 
         Map<UUID, List<GraphArc>> outgoing = new LinkedHashMap<>();
         addBoth(outgoing, "EDGE-1F-ENTRANCE-HUB", "00005001", NODE_1F_ENTRANCE, NODE_1F_HUB, 30, 30, ArcType.WALK, true, null);
@@ -147,7 +170,7 @@ public class InMemoryPublishedGraphService {
         addBoth(outgoing, "EDGE-3F-ELEV-A-HUB", "00005021", NODE_3F_ELEVATOR_A, NODE_3F_HUB, 15, 15, ArcType.WALK, true, null);
         addBoth(outgoing, "EDGE-3F-ELEV-B-HUB", "00005022", NODE_3F_ELEVATOR_B, NODE_3F_HUB, 20, 20, ArcType.WALK, true, null);
         addBoth(outgoing, "EDGE-3F-STAIRS-HUB", "00005023", NODE_3F_STAIRS, NODE_3F_HUB, 8, 8, ArcType.WALK, true, null);
-        addBoth(outgoing, "EDGE-3F-HUB-PHARMACY", "00005024", NODE_3F_HUB, NODE_3F_PHARMACY, 15, 15, ArcType.WALK, true, null);
+        addBoth(outgoing, "EDGE-3F-HUB-ULTRASOUND", "00005024", NODE_3F_HUB, NODE_3F_ULTRASOUND, 15, 15, ArcType.WALK, true, null);
 
         Map<UUID, VerticalConnector> verticalConnectors =
             buildVerticalConnectors();
@@ -163,10 +186,10 @@ public class InMemoryPublishedGraphService {
         );
 
         Map<UUID, PoiSnapshot> pois = new LinkedHashMap<>();
-        addPoi(pois, POI_ENTRANCE_ID, "P-ENTRANCE", "入口", "entrance", FLOOR_1_ID, NODE_1F_ENTRANCE, 100, 300, "大门");
-        addPoi(pois, POI_REGISTRATION_ID, "P-REGISTRATION", "挂号处", "window", FLOOR_1_ID, NODE_1F_HUB, 350, 300, "挂号", "取号");
-        addPoi(pois, POI_CLINIC_2F_ID, "P-CLINIC-2F", "二层诊室", "department", FLOOR_2_ID, NODE_2F_CLINIC, 150, 220, "诊室", "二楼");
-        addPoi(pois, POI_PHARMACY_3F_ID, "P-PHARMACY-3F", "三层药房", "pharmacy", FLOOR_3_ID, NODE_3F_PHARMACY, 150, 220, "药房", "取药");
+        addPoi(pois, POI_ENTRANCE_ID, "P-ENTRANCE", "门诊入口", "entrance", FLOOR_1_ID, NODE_1F_ENTRANCE, 500, 775, "入口", "大门");
+        addPoi(pois, POI_REGISTRATION_ID, "P-REGISTRATION", "门诊大厅服务台", "service", FLOOR_1_ID, NODE_1F_HUB, 500, 435, "导医", "服务中心", "取号");
+        addPoi(pois, POI_CLINIC_2F_ID, "P-LAB-2F", "检验科", "department", FLOOR_2_ID, NODE_2F_CLINIC, 365, 185, "检验", "抽血", "二楼");
+        addPoi(pois, POI_ULTRASOUND_3F_ID, "P-ULTRASOUND-3F", "超声医学科", "department", FLOOR_3_ID, NODE_3F_ULTRASOUND, 300, 560, "超声", "三楼");
 
         Map<UUID, ConnectorSnapshot> connectors = new LinkedHashMap<>();
         connectors.put(
@@ -342,7 +365,7 @@ public class InMemoryPublishedGraphService {
             1,
             imageUrl,
             1000,
-            620
+            800
         );
     }
 

@@ -25,9 +25,9 @@
 
 ## 当前实现
 
-- `hospital-map-demo/`: 静态单层路线引导 Demo，包含导航页、路网数据和地图编辑器。
+- `hospital-map-demo/`: 保留单层路线 Demo，并新增基于真实楼层测试底图的多楼层路线页面。
 - `hospital-navigation-server/`: Spring Boot 后端；阶段 1 的三层内存发布图、
-  跨层设施、Dijkstra 路线核心和正式 `POST /api/routes` 已实现并有自动化测试。
+  跨层设施、Dijkstra 路线核心、导航上下文和正式 `POST /api/routes` 已实现并有自动化测试。
 - 当前下一步是阶段 2：接入 PostgreSQL、Flyway、Docker Compose 和 Maven Wrapper，
   用持久化发布图替换运行时内存数据。
 

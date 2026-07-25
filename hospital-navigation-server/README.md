@@ -12,6 +12,7 @@ MedRoute 的 Spring Boot 后端。当前已完成“阶段 1：内存多楼层�
   尚未定义成本规则的 `less_elevator` 返回 `400`。
 - 路线服务和测试 fixture 支持进程内临时关闭边或连接器；当前尚未提供运营管理 HTTP 入口。
 - 返回按楼层拆分的 `segments`、实际跨层动作 `transitions` 和文字 `steps`。
+- 提供当前发布图的导航上下文，供前端读取楼层底图、坐标系和可选 POI。
 - 正式路线接口响应携带 `X-Request-Id`；已映射的客户端错误和未预期服务端错误
   使用统一的 `error` 对象。
 
@@ -28,6 +29,16 @@ Content-Type: application/json
 X-Request-Id: req-local-demo
 ```
 
+导航页面先读取当前发布上下文：
+
+```http
+GET /api/buildings/00000000-0000-0000-0000-000000000100/navigation-context
+```
+
+该接口返回发布版本、楼层图片元数据和支持的路线模式。页面随后通过
+`GET /api/buildings/{buildingId}/pois` 读取同一发布版本的 POI。当前图片路径指向
+本仓库的测试底图，仅供 `hospital-map-demo/multifloor.html` 演示使用。
+
 可直接使用当前 fixture 中的 ID：
 
 ```json
@@ -40,7 +51,7 @@ X-Request-Id: req-local-demo
 }
 ```
 
-该请求会从 `1F` 入口经仅停靠 `1F / 3F` 的 A 电梯到达 `3F` 药房。
+该请求会从 `1F` 入口经仅停靠 `1F / 3F` 的 A 电梯到达 `3F` 超声医学科。
 响应摘要为 75 米、125 秒，并包含两个楼层段和一个跨层动作。
 
 以下单层数字 ID 接口暂时保留，供现有静态 Demo 兼容使用，不属于新的正式
@@ -76,12 +87,13 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 17)
 mvn test
 ```
 
-当前 33 个 JUnit 5 测试覆盖：
+当前 JUnit 5 测试覆盖：
 
 - 时间优先、距离次级排序、长整型成本累计和单向边。
 - 普通/无障碍跨层路线、电梯停靠限制和连接器关闭后的备选路线。
 - 发布版本冲突、POI 版本归属、不可达路线。
 - 决策点文字步骤、正式 JSON 响应、错误码和 `X-Request-Id`。
+- 已发布地图的楼层、底图坐标系与 POI 导航上下文。
 - 保留的单层兼容路线服务。
 
 ## 运行

@@ -7,12 +7,33 @@ This directory contains the phase-one single-floor route guidance demo.
 - `index.html`: UI, SVG map rendering, route calculation, and step rendering.
 - `editor.html`: minimal graph editor for nodes, edges, POIs, and JSON export.
 - `graph-data.js`: floor metadata, default route, path nodes, path edges, and POIs.
+- `multifloor.html`: calls the multi-floor backend contract and renders the returned route over per-floor images.
+- `multifloor.js` / `multifloor.css`: backend integration and responsive map tool UI.
+- `assets/hndfsrmyy/`: clearly marked local test floor-plan assets and source notes.
 
 ## Run Locally
 
 Open `index.html` directly in a browser. No server, database, or build step is required.
 
 Open `editor.html` to edit the same demo graph. The editor changes data in memory only; use "生成 JSON" to export the edited graph.
+
+For the multi-floor test page, start the Spring Boot service first, then serve the
+repository root and open:
+
+```text
+http://127.0.0.1:4173/hospital-map-demo/multifloor.html
+```
+
+The default backend address is `http://127.0.0.1:8080`. To use a different one:
+
+```text
+multifloor.html?api=http://127.0.0.1:8080
+```
+
+The page reads `GET /api/buildings/{buildingId}/navigation-context` for floors,
+image dimensions, and the active `releaseId`, then reads
+`GET /api/buildings/{buildingId}/pois` from the same release before sending route
+requests to `POST /api/routes`. It does not duplicate route calculation in the browser.
 
 To load graph data from the phase-two backend instead of `graph-data.js`, run the server and open:
 
@@ -44,6 +65,11 @@ The route page supports:
 The room and corridor illustration is still the fixed `1000 × 620` phase-one
 Demo floor plan. Remote node and POI coordinates must use this same coordinate
 system; loading arbitrary floor-plan artwork is outside the current Demo scope.
+
+`multifloor.html` is a separate, explicitly test-only surface. Its three images
+use a `1000 × 800` coordinate system, and its source, permissions caveat, and
+synthetic connector assumptions are documented in `assets/hndfsrmyy/README.md`.
+The old single-floor page remains unchanged for graph-editor work.
 
 The editor supports maintaining operational path edge fields:
 
