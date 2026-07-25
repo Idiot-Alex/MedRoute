@@ -668,6 +668,138 @@ select {
   text-align: center;
 }
 
+.route-guide-dialog {
+  width: 100%;
+  max-width: none;
+  height: min(380px, 55dvh);
+  max-height: 70dvh;
+  margin: auto 0 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--ink);
+  border: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--surface);
+  box-shadow: 0 -8px 28px rgba(23, 33, 31, 0.18);
+}
+
+.route-guide-dialog::backdrop {
+  background: rgba(23, 33, 31, 0.38);
+}
+
+.route-guide-sheet {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+}
+
+.route-guide-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 68px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.route-guide-header p,
+.route-guide-header h2,
+.route-guide-instruction {
+  margin: 0;
+}
+
+.route-guide-header p {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.route-guide-header h2 {
+  margin-top: 2px;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.route-guide-body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 0;
+  padding: 14px 16px;
+  overflow-y: auto;
+}
+
+.route-guide-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.route-guide-meta strong {
+  color: var(--accent-strong);
+  font-size: 14px;
+}
+
+.route-guide-meta span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.route-guide-instruction {
+  align-self: center;
+  font-size: 18px;
+  font-weight: 680;
+  line-height: 1.55;
+}
+
+.step-map-action {
+  justify-self: start;
+  min-height: 44px;
+  padding: 7px 10px 7px 0;
+  color: var(--accent-strong);
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.step-map-action:hover {
+  text-decoration: underline;
+}
+
+.route-guide-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 16px max(10px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.route-guide-actions button {
+  min-height: 48px;
+  padding: 8px 12px;
+  color: var(--ink-soft);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 14px;
+  font-weight: 720;
+}
+
+.route-guide-actions button.is-primary {
+  color: #ffffff;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.route-guide-actions button.is-primary:hover:not(:disabled) {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
 .map-panel {
   overflow: hidden;
   scroll-margin-top: 60px;
@@ -1141,6 +1273,14 @@ select {
     width: min(520px, calc(100% - 32px));
     height: min(680px, calc(100dvh - 48px));
     max-height: calc(100dvh - 48px);
+    margin: auto;
+    border-radius: var(--radius);
+    box-shadow: 0 12px 36px rgba(23, 33, 31, 0.24);
+  }
+
+  .route-guide-dialog {
+    width: min(480px, calc(100% - 32px));
+    height: 360px;
     margin: auto;
     border-radius: var(--radius);
     box-shadow: 0 12px 36px rgba(23, 33, 31, 0.24);

@@ -34,6 +34,7 @@
     poiSearchEndpoint: "start",
     poiSearchFloorId: "",
     poiSearchReturnFocus: null,
+    guideStepIndex: 0,
   };
 
   const elements = {
@@ -66,7 +67,6 @@
     routeBriefTitle: document.querySelector("#route-brief-title"),
     routeBriefMeta: document.querySelector("#route-brief-meta"),
     showRouteSteps: document.querySelector("#show-route-steps"),
-    routePanel: document.querySelector(".route-panel"),
     routeModeLabel: document.querySelector("#route-mode-label"),
     routeSummary: document.querySelector("#route-summary"),
     routeSteps: document.querySelector("#route-steps"),
@@ -78,6 +78,16 @@
     poiSearchResults: document.querySelector("#poi-search-results"),
     poiSearchEmpty: document.querySelector("#poi-search-empty"),
     closePoiSearch: document.querySelector("#close-poi-search"),
+    routeGuideDialog: document.querySelector("#route-guide-dialog"),
+    routeGuideProgress: document.querySelector("#route-guide-progress"),
+    routeGuideFloor: document.querySelector("#route-guide-floor"),
+    routeGuideInstruction: document.querySelector(
+      "#route-guide-instruction"
+    ),
+    closeRouteGuide: document.querySelector("#close-route-guide"),
+    showStepMap: document.querySelector("#show-step-map"),
+    previousRouteStep: document.querySelector("#previous-route-step"),
+    nextRouteStep: document.querySelector("#next-route-step"),
   };
 
   function requestUrl(path) {
@@ -609,6 +619,83 @@
     elements.routeBrief.hidden = false;
   }
 
+  function renderRouteGuide() {
+    if (!state.route || state.route.steps.length === 0) {
+      return;
+    }
+    const lastIndex = state.route.steps.length - 1;
+    state.guideStepIndex = Math.min(
+      Math.max(state.guideStepIndex, 0),
+      lastIndex
+    );
+    const step = state.route.steps[state.guideStepIndex];
+    const floor = state.context.floors.find(
+      (candidate) => candidate.id === step.floorId
+    );
+    const floorName = floor
+      ? floor.name === floor.code
+        ? floor.code
+        : `${floor.code} ${floor.name}`
+      : "跨层步骤";
+
+    elements.routeGuideProgress.textContent =
+      `步骤 ${state.guideStepIndex + 1} / ${state.route.steps.length}`;
+    elements.routeGuideFloor.textContent = floorName;
+    elements.routeGuideInstruction.textContent = step.instruction;
+    elements.previousRouteStep.disabled = state.guideStepIndex === 0;
+    elements.nextRouteStep.textContent =
+      state.guideStepIndex === lastIndex ? "完成" : "下一步 →";
+
+    if (floor && state.selectedFloorId !== floor.id) {
+      state.selectedFloorId = floor.id;
+      renderMap();
+    }
+  }
+
+  function openRouteGuide() {
+    if (
+      !state.route ||
+      state.route.steps.length === 0 ||
+      elements.routeGuideDialog.open
+    ) {
+      return;
+    }
+    setMapExpanded(false);
+    renderRouteGuide();
+    elements.routeGuideDialog.showModal();
+    window.requestAnimationFrame(() => elements.nextRouteStep.focus());
+  }
+
+  function closeRouteGuide() {
+    if (!elements.routeGuideDialog.open) {
+      return;
+    }
+    elements.routeGuideDialog.close();
+    elements.showRouteSteps.focus();
+  }
+
+  function moveRouteGuide(direction) {
+    if (!state.route) {
+      return;
+    }
+    const nextIndex = state.guideStepIndex + direction;
+    if (nextIndex >= state.route.steps.length) {
+      closeRouteGuide();
+      return;
+    }
+    if (nextIndex < 0) {
+      return;
+    }
+    state.guideStepIndex = nextIndex;
+    renderRouteGuide();
+  }
+
+  function showCurrentStepMap() {
+    closeRouteGuide();
+    elements.expandMap.focus({ preventScroll: true });
+    scrollMapIntoView();
+  }
+
   function summaryItem(label, value) {
     const item = document.createElement("div");
     item.className = "summary-item";
@@ -640,7 +727,11 @@
   }
 
   function clearRoute() {
+    if (elements.routeGuideDialog.open) {
+      elements.routeGuideDialog.close();
+    }
     state.route = null;
+    state.guideStepIndex = 0;
     elements.formMessage.textContent = "";
     if (!state.context) {
       return;
@@ -711,6 +802,7 @@
         }),
       });
       state.route = route;
+      state.guideStepIndex = 0;
       state.selectedFloorId = chooseFloorForRoute(route);
       elements.formMessage.textContent = "";
       renderRouteSummary();
@@ -837,10 +929,25 @@
   });
 
   elements.showRouteSteps.addEventListener("click", () => {
-    setMapExpanded(false);
-    window.requestAnimationFrame(() => {
-      elements.routePanel.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    openRouteGuide();
+  });
+
+  elements.closeRouteGuide.addEventListener("click", closeRouteGuide);
+  elements.previousRouteStep.addEventListener("click", () => {
+    moveRouteGuide(-1);
+  });
+  elements.nextRouteStep.addEventListener("click", () => {
+    moveRouteGuide(1);
+  });
+  elements.showStepMap.addEventListener("click", showCurrentStepMap);
+  elements.routeGuideDialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeRouteGuide();
+  });
+  elements.routeGuideDialog.addEventListener("click", (event) => {
+    if (event.target === elements.routeGuideDialog) {
+      closeRouteGuide();
+    }
   });
 
   document.addEventListener("keydown", (event) => {

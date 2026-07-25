@@ -9,7 +9,7 @@ This directory contains the phase-one single-floor route guidance demo.
 - `graph-data.js`: floor metadata, default route, path nodes, path edges, and POIs.
 - `multifloor.html`: mobile-first navigation UI that renders the backend route over per-floor images.
 - `multifloor.js` / `multifloor.css`: backend integration, POI search, deep links,
-  and responsive map tool UI.
+  step-by-step route browsing, and responsive map tool UI.
 - `admin.html` / `admin.js` / `admin.css`: desktop-first persistent multi-floor map authoring,
   validation, publishing, rollback, QR-code generation, and operation-closure workspace.
 - `assets/hndfsrmyy/`: clearly marked local test floor-plan assets and source notes.
@@ -61,7 +61,10 @@ required; admin edits are not kept only in browser memory.
 
 The mobile page uses a touch-oriented search sheet for start and destination POIs.
 It filters the active release by name, code, category, floor, aliases, pinyin, and
-pinyin initials. Deep links use stable business codes:
+pinyin initials. After route calculation, a separate step sheet supports explicit
+previous/next navigation and switches the floor map to the current instruction.
+It does not claim to track the user's live position. Deep links use stable business
+codes:
 
 ```text
 multifloor.html?building={buildingId}&startPoi={poiCode}

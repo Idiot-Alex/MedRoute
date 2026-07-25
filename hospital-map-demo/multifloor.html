@@ -9,8 +9,8 @@
     >
     <title>MedRoute 医院室内导航</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="./multifloor.css?v=20260726-3">
-    <script defer src="./multifloor.js?v=20260726-3"></script>
+    <link rel="stylesheet" href="./multifloor.css?v=20260726-5">
+    <script defer src="./multifloor.js?v=20260726-5"></script>
   </head>
   <body>
     <div class="app-shell" data-page-state="loading">
@@ -258,6 +258,52 @@
         <p id="poi-search-empty" class="poi-search-empty" hidden>
           没有找到匹配地点
         </p>
+      </div>
+    </dialog>
+
+    <dialog
+      id="route-guide-dialog"
+      class="route-guide-dialog"
+      aria-labelledby="route-guide-title"
+    >
+      <div class="route-guide-sheet">
+        <header class="route-guide-header">
+          <div>
+            <p id="route-guide-progress">步骤 1 / 1</p>
+            <h2 id="route-guide-title">路线步骤</h2>
+          </div>
+          <button
+            id="close-route-guide"
+            class="dialog-close"
+            type="button"
+            aria-label="关闭路线步骤"
+            title="关闭"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        </header>
+
+        <div class="route-guide-body">
+          <div class="route-guide-meta">
+            <strong id="route-guide-floor">当前楼层</strong>
+            <span>固定路线说明</span>
+          </div>
+          <p id="route-guide-instruction">等待路线步骤</p>
+          <button id="show-step-map" class="step-map-action" type="button">
+            查看此楼层地图
+          </button>
+        </div>
+
+        <footer class="route-guide-actions">
+          <button id="previous-route-step" type="button" disabled>
+            <span aria-hidden="true">←</span>
+            上一步
+          </button>
+          <button id="next-route-step" class="is-primary" type="button">
+            下一步
+            <span aria-hidden="true">→</span>
+          </button>
+        </footer>
       </div>
     </dialog>
   </body>
