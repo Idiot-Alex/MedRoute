@@ -22,6 +22,11 @@ index.html?api=http://127.0.0.1:8080
 
 If the backend request fails, the page falls back to the local demo data.
 
+Remote graph defaults are optional. If a remote `startPoiId` or `endPoiId` is
+missing or does not exist in that graph, the page selects available remote POIs
+instead of assuming the local Demo IDs. Quick-route buttons are disabled when
+their POIs are not present.
+
 ## Current Demo Scope
 
 The route page supports:
@@ -31,7 +36,14 @@ The route page supports:
 - common route presets for quick demonstrations
 - normal shortest route and accessible route modes
 - route calculation that ignores disabled path edges and avoids non-accessible edges in accessible mode
+- route calculation that honors `forward` and `both` edge direction and never exposes `staff` edges
 - step-by-step text using path node names, distance, walk time, and edge remarks
+- graceful messages for empty POI data, missing POI-node bindings, invalid node coordinates, and dangling edges
+- a responsive SVG map that scales down on narrow screens
+
+The room and corridor illustration is still the fixed `1000 × 620` phase-one
+Demo floor plan. Remote node and POI coordinates must use this same coordinate
+system; loading arbitrary floor-plan artwork is outside the current Demo scope.
 
 The editor supports maintaining operational path edge fields:
 
@@ -69,5 +81,8 @@ The editor currently supports:
 - connect two nodes as a path edge
 - add POIs and bind them to the nearest node
 - edit selected node, edge, or POI fields, including edge accessibility, status, and remark
-- delete selected objects
+- delete selected objects and keep default start/destination POI IDs consistent
 - export the current graph as JSON
+
+A POI requires at least one path node. If every node has been deleted, the
+editor asks the user to create a node before adding another POI.

@@ -30,18 +30,18 @@ window.MED_ROUTE_GRAPH = {
     { id: "N12", x: 640, y: 390, name: "电梯 A 门口", type: "elevator" }
   ],
   edges: [
-    { id: "E1", from: "N11", to: "N1", distance: 6, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "入口门厅到挂号处。" },
-    { id: "E2", from: "N1", to: "N2", distance: 12, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "大厅主通道。" },
-    { id: "E3", from: "N2", to: "N3", distance: 14, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "大厅中心通道。" },
-    { id: "E4", from: "N3", to: "N4", distance: 12, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "中庭主通道。" },
-    { id: "E5", from: "N4", to: "N5", distance: 8, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "检验科入口。" },
-    { id: "E6", from: "N4", to: "N6", distance: 13, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "药房排队区外侧。" },
-    { id: "E7", from: "N6", to: "N7", distance: 8, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "药房取药窗口。" },
-    { id: "E8", from: "N4", to: "N8", distance: 14, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "影像科方向主通道。" },
-    { id: "E9", from: "N8", to: "N9", distance: 10, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "影像科门口。" },
-    { id: "E10", from: "N2", to: "N10", distance: 8, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "卫生间入口。" },
-    { id: "E11", from: "N3", to: "N12", distance: 12, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "电梯厅入口。" },
-    { id: "E12", from: "N12", to: "N8", distance: 10, walkTime: 1, accessible: false, status: "enabled", type: "walk", remark: "窄通道，轮椅路线不推荐。" }
+    { id: "E1", from: "N11", to: "N1", direction: "both", distance: 6, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "入口门厅到挂号处。" },
+    { id: "E2", from: "N1", to: "N2", direction: "both", distance: 12, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "大厅主通道。" },
+    { id: "E3", from: "N2", to: "N3", direction: "both", distance: 14, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "大厅中心通道。" },
+    { id: "E4", from: "N3", to: "N4", direction: "both", distance: 12, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "中庭主通道。" },
+    { id: "E5", from: "N4", to: "N5", direction: "both", distance: 8, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "检验科入口。" },
+    { id: "E6", from: "N4", to: "N6", direction: "both", distance: 13, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "药房排队区外侧。" },
+    { id: "E7", from: "N6", to: "N7", direction: "both", distance: 8, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "药房取药窗口。" },
+    { id: "E8", from: "N4", to: "N8", direction: "both", distance: 14, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "影像科方向主通道。" },
+    { id: "E9", from: "N8", to: "N9", direction: "both", distance: 10, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "影像科门口。" },
+    { id: "E10", from: "N2", to: "N10", direction: "both", distance: 8, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "卫生间入口。" },
+    { id: "E11", from: "N3", to: "N12", direction: "both", distance: 12, walkTime: 1, accessible: true, status: "enabled", type: "walk", remark: "电梯厅入口。" },
+    { id: "E12", from: "N12", to: "N8", direction: "both", distance: 10, walkTime: 1, accessible: false, status: "enabled", type: "walk", remark: "窄通道，轮椅路线不推荐。" }
   ],
   pois: [
     { id: "P1", name: "入口", category: "entrance", nodeId: "N11", x: 145, y: 414, searchKeywords: ["入口", "大门"] },

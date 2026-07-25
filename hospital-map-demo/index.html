@@ -133,6 +133,11 @@
       background: var(--primary-strong);
     }
 
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
     button.secondary {
       color: var(--ink);
       border: 1px solid var(--line);
@@ -262,7 +267,7 @@
 
     .map-frame {
       width: min(100%, 1120px);
-      min-width: 860px;
+      min-width: 0;
       aspect-ratio: 1000 / 620;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -372,6 +377,15 @@
 
       .map-shell {
         padding: 16px;
+      }
+
+      .map-toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .map-frame {
+        width: 100%;
       }
     }
   </style>
@@ -502,11 +516,28 @@
     const nodeLayer = document.getElementById("nodeLayer");
     const poiLayer = document.getElementById("poiLayer");
     const routeLine = document.getElementById("routeLine");
+    const quickRouteButtons = Array.from(document.querySelectorAll("[data-start][data-end]"));
 
     function svgElement(tag, attributes) {
       const element = document.createElementNS("http://www.w3.org/2000/svg", tag);
       Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, value));
       return element;
+    }
+
+    function hasValidPoint(item) {
+      if (!item) {
+        return false;
+      }
+      const coordinates = [item.x, item.y];
+      return coordinates.every((value) => {
+        if (value === null || value === undefined) {
+          return false;
+        }
+        if (typeof value === "string" && value.trim() === "") {
+          return false;
+        }
+        return Number.isFinite(Number(value));
+      });
     }
 
     async function loadGraphData() {
@@ -520,26 +551,95 @@
         throw new Error(`图数据接口返回 ${response.status}`);
       }
       const remoteGraph = await response.json();
+      if (!remoteGraph || typeof remoteGraph !== "object") {
+        throw new Error("图数据接口未返回有效对象");
+      }
       return {
         ...remoteGraph,
-        defaults: window.MED_ROUTE_GRAPH.defaults || {
-          startPoiId: remoteGraph.pois[0]?.id,
-          endPoiId: remoteGraph.pois[1]?.id,
-          routeMode: "normal"
-        }
+        defaults: remoteGraph.defaults && typeof remoteGraph.defaults === "object"
+          ? remoteGraph.defaults
+          : {}
       };
     }
 
     function applyGraphData(nextGraph) {
-      graph = nextGraph;
-      ({ floor, defaults, nodes, edges, pois } = graph);
+      const source = nextGraph && typeof nextGraph === "object" ? nextGraph : {};
+      const localFloor = window.MED_ROUTE_GRAPH.floor || {};
+      floor = source.floor && typeof source.floor === "object"
+        ? { ...localFloor, ...source.floor }
+        : localFloor;
+      nodes = Array.isArray(source.nodes)
+        ? source.nodes
+          .filter((node) => node && node.id !== undefined && node.id !== null)
+          .map((node) => ({ ...node, id: String(node.id) }))
+        : [];
+      edges = Array.isArray(source.edges)
+        ? source.edges
+          .filter((edge) => edge && edge.id !== undefined && edge.id !== null)
+          .map((edge) => ({
+            ...edge,
+            id: String(edge.id),
+            from: edge.from === undefined || edge.from === null ? "" : String(edge.from),
+            to: edge.to === undefined || edge.to === null ? "" : String(edge.to)
+          }))
+        : [];
+      pois = Array.isArray(source.pois)
+        ? source.pois
+          .filter((poi) => poi && poi.id !== undefined && poi.id !== null)
+          .map((poi) => ({
+            ...poi,
+            id: String(poi.id),
+            nodeId: poi.nodeId === undefined || poi.nodeId === null ? "" : String(poi.nodeId),
+            searchKeywords: Array.isArray(poi.searchKeywords) ? poi.searchKeywords : []
+          }))
+        : [];
       nodeById = new Map(nodes.map((node) => [node.id, node]));
       poiById = new Map(pois.map((poi) => [poi.id, poi]));
+
+      const requestedDefaults = source.defaults && typeof source.defaults === "object"
+        ? source.defaults
+        : {};
+      const requestedStartId = requestedDefaults.startPoiId === undefined ||
+        requestedDefaults.startPoiId === null
+        ? ""
+        : String(requestedDefaults.startPoiId);
+      const requestedEndId = requestedDefaults.endPoiId === undefined ||
+        requestedDefaults.endPoiId === null
+        ? ""
+        : String(requestedDefaults.endPoiId);
+      const startPoiId = poiById.has(requestedStartId)
+        ? requestedStartId
+        : (pois[0] ? pois[0].id : "");
+      const fallbackEnd = pois.find((poi) => poi.id !== startPoiId) || pois[0];
+      let endPoiId = poiById.has(requestedEndId)
+        ? requestedEndId
+        : (fallbackEnd ? fallbackEnd.id : "");
+      if (endPoiId === startPoiId && pois.length > 1) {
+        endPoiId = fallbackEnd.id;
+      }
+      const routeMode = requestedDefaults.routeMode === "accessible" ? "accessible" : "normal";
+      defaults = {
+        ...requestedDefaults,
+        startPoiId,
+        endPoiId,
+        routeMode
+      };
+      graph = { ...source, floor, defaults, nodes, edges, pois };
     }
 
     function renderFloorMeta() {
-      floorTitle.textContent = `${floor.buildingName} ${floor.floorName}`;
-      document.title = `${floor.hospitalName}${floor.buildingName}${floor.floorName}路线引导`;
+      const buildingName = floor.buildingName || "医院建筑";
+      const floorName = floor.floorName || "楼层";
+      floorTitle.textContent = `${buildingName} ${floorName}`;
+      document.title = `${floor.hospitalName || ""}${buildingName}${floorName}路线引导`;
+    }
+
+    function updateQuickRouteAvailability() {
+      quickRouteButtons.forEach((button) => {
+        const available = poiById.has(button.dataset.start) && poiById.has(button.dataset.end);
+        button.disabled = !available;
+        button.title = available ? "" : "当前图数据不包含这条快捷路线所需的 POI";
+      });
     }
 
     function populateSelects() {
@@ -547,20 +647,27 @@
       endSelect.replaceChildren();
       poiSuggestions.replaceChildren();
       pois.forEach((poi) => {
-        const optionLabel = `${poi.name}（${poi.category}）`;
+        const poiName = poi.name || poi.id;
+        const optionLabel = `${poiName}（${poi.category || "other"}）`;
         const startOption = new Option(optionLabel, poi.id);
         const endOption = new Option(optionLabel, poi.id);
         startSelect.add(startOption);
         endSelect.add(endOption);
 
         const suggestion = document.createElement("option");
-        suggestion.value = poi.name;
+        suggestion.value = poiName;
         suggestion.label = [poi.category, ...(poi.searchKeywords || [])].filter(Boolean).join(" / ");
         poiSuggestions.appendChild(suggestion);
       });
-      startSelect.value = defaults.startPoiId;
-      endSelect.value = defaults.endPoiId;
-      routeModeSelect.value = defaults.routeMode || "normal";
+      startSelect.value = defaults.startPoiId || "";
+      endSelect.value = defaults.endPoiId || "";
+      routeModeSelect.value = defaults.routeMode;
+      const hasPois = pois.length > 0;
+      startSelect.disabled = !hasPois;
+      endSelect.disabled = !hasPois;
+      routeButton.disabled = !hasPois;
+      swapButton.disabled = pois.length < 2;
+      updateQuickRouteAvailability();
     }
 
     function drawGraph() {
@@ -570,6 +677,9 @@
       edges.forEach((edge) => {
         const from = nodeById.get(edge.from);
         const to = nodeById.get(edge.to);
+        if (!hasValidPoint(from) || !hasValidPoint(to)) {
+          return;
+        }
         edgeLayer.appendChild(svgElement("line", {
           class: `edge ${(edge.status || "enabled") !== "enabled" ? "closed" : ""} ${edge.accessible === false ? "limited" : ""}`,
           x1: from.x,
@@ -581,6 +691,9 @@
       });
 
       nodes.forEach((node) => {
+        if (!hasValidPoint(node)) {
+          return;
+        }
         nodeLayer.appendChild(svgElement("circle", {
           class: "node-point",
           cx: node.x,
@@ -590,6 +703,9 @@
       });
 
       pois.forEach((poi) => {
+        if (!hasValidPoint(poi)) {
+          return;
+        }
         const group = svgElement("g", { "data-poi": poi.id });
         const point = svgElement("circle", {
           class: "poi-point",
@@ -602,7 +718,7 @@
           x: poi.x,
           y: poi.y - 18
         });
-        label.textContent = poi.name;
+        label.textContent = poi.name || poi.id;
         group.append(point, label);
         group.addEventListener("click", () => {
           endSelect.value = poi.id;
@@ -614,6 +730,9 @@
 
     function isEdgeUsable(edge, routeMode) {
       if ((edge.status || "enabled") !== "enabled") {
+        return false;
+      }
+      if (String(edge.type || "").toLowerCase() === "staff") {
         return false;
       }
       if (routeMode === "accessible" && edge.accessible === false) {
@@ -628,14 +747,29 @@
         if (!isEdgeUsable(edge, routeMode)) {
           return;
         }
-        adjacency.get(edge.from).push({ nodeId: edge.to, distance: edge.distance, edgeId: edge.id });
-        adjacency.get(edge.to).push({ nodeId: edge.from, distance: edge.distance, edgeId: edge.id });
+        const fromLinks = adjacency.get(edge.from);
+        const toLinks = adjacency.get(edge.to);
+        const distance = Number(edge.distance);
+        if (!fromLinks || !toLinks || !Number.isFinite(distance) || distance <= 0) {
+          return;
+        }
+        const direction = String(edge.direction || "both").toLowerCase();
+        const bothDirections = direction === "both" || direction === "bidirectional";
+        if (direction === "forward" || bothDirections) {
+          fromLinks.push({ nodeId: edge.to, distance, edgeId: edge.id });
+        }
+        if (bothDirections) {
+          toLinks.push({ nodeId: edge.from, distance, edgeId: edge.id });
+        }
       });
       return adjacency;
     }
 
     function findShortestPath(startNodeId, endNodeId, routeMode) {
       const adjacency = buildAdjacency(routeMode);
+      if (!adjacency.has(startNodeId) || !adjacency.has(endNodeId)) {
+        return { path: [], pathEdgeIds: [], distance: Infinity };
+      }
       const distances = new Map(nodes.map((node) => [node.id, Infinity]));
       const previous = new Map();
       const previousEdge = new Map();
@@ -714,26 +848,40 @@
 
     function renderSteps(startPoi, endPoi, result, routeMode) {
       const { path, pathEdgeIds, distance } = result;
-      const pathNames = path.map((nodeId) => nodeById.get(nodeId).name);
+      const pathNames = path.map((nodeId) => {
+        const node = nodeById.get(nodeId);
+        return node && node.name ? node.name : nodeId;
+      });
       const estimatedMinutes = pathEdgeIds.reduce((total, edgeId) => {
         const edge = getEdge(edgeId);
-        return total + (edge?.walkTime || Math.max(1, Math.ceil((edge?.distance || 0) / 18)));
+        if (!edge) {
+          return total;
+        }
+        const walkTime = Number(edge.walkTime);
+        const edgeDistance = Number(edge.distance);
+        return total + (
+          Number.isFinite(walkTime) && walkTime > 0
+            ? walkTime
+            : Math.max(1, Math.ceil((Number.isFinite(edgeDistance) ? edgeDistance : 0) / 18))
+        );
       }, 0);
       const routeModeText = routeMode === "accessible" ? "无障碍优先路线" : "普通最短路线";
-      summary.innerHTML = `
-        <strong>${startPoi.name} → ${endPoi.name}</strong><br>
-        ${routeModeText}，距离约 ${distance} 米，预计 ${Math.max(1, estimatedMinutes)} 分钟，经过 ${path.length} 个路径节点。
-      `;
+      const heading = document.createElement("strong");
+      heading.textContent = `${startPoi.name || startPoi.id} → ${endPoi.name || endPoi.id}`;
+      const detail = document.createTextNode(
+        `${routeModeText}，距离约 ${distance} 米，预计 ${Math.max(1, estimatedMinutes)} 分钟，经过 ${path.length} 个路径节点。`
+      );
+      summary.replaceChildren(heading, document.createElement("br"), detail);
 
       const stepTexts = pathEdgeIds.map((edgeId, index) => {
         const edge = getEdge(edgeId);
         const fromName = pathNames[index];
         const toName = pathNames[index + 1];
-        const remark = edge?.remark ? ` ${edge.remark}` : "";
-        return `从${fromName}前往${toName}，约 ${edge?.distance || 0} 米。${remark}`;
+        const remark = edge && edge.remark ? ` ${edge.remark}` : "";
+        return `从${fromName}前往${toName}，约 ${edge ? edge.distance : 0} 米。${remark}`;
       });
-      stepTexts.unshift(`从${startPoi.name}出发，进入${pathNames[0]}。`);
-      stepTexts.push(`到达${endPoi.name}附近，导航结束。`);
+      stepTexts.unshift(`从${startPoi.name || startPoi.id}出发，进入${pathNames[0]}。`);
+      stepTexts.push(`到达${endPoi.name || endPoi.id}附近，导航结束。`);
 
       steps.replaceChildren();
       stepTexts.forEach((text, index) => {
@@ -744,36 +892,51 @@
       });
     }
 
+    function clearRoute(message) {
+      routeLine.setAttribute("points", "");
+      renderEdgeState([]);
+      summary.textContent = message;
+      steps.replaceChildren();
+    }
+
     function calculateAndRenderRoute() {
       const startPoi = poiById.get(startSelect.value);
       const endPoi = poiById.get(endSelect.value);
       const routeMode = routeModeSelect.value;
 
-      renderPoiState(startPoi.id, endPoi.id);
+      renderPoiState(startPoi ? startPoi.id : "", endPoi ? endPoi.id : "");
+
+      if (!startPoi || !endPoi) {
+        clearRoute(pois.length === 0
+          ? "当前图数据没有可用于导航的 POI。"
+          : "请选择有效的起点和终点。");
+        return;
+      }
+
+      if (!nodeById.has(startPoi.nodeId) || !nodeById.has(endPoi.nodeId)) {
+        clearRoute("起点或终点未绑定有效路径节点，请检查图数据。");
+        return;
+      }
 
       if (startPoi.id === endPoi.id) {
-        routeLine.setAttribute("points", "");
-        renderEdgeState([]);
-        summary.textContent = "起点和终点相同，请选择不同的目的地。";
-        steps.replaceChildren();
+        clearRoute("起点和终点相同，请选择不同的目的地。");
         return;
       }
 
       const result = findShortestPath(startPoi.nodeId, endPoi.nodeId, routeMode);
       if (result.path.length === 0) {
-        routeLine.setAttribute("points", "");
-        renderEdgeState([]);
-        summary.textContent = routeMode === "accessible"
+        clearRoute(routeMode === "accessible"
           ? "当前无障碍路网无法到达该目的地，请检查路径边的无障碍属性。"
-          : "当前路网无法到达该目的地。";
-        steps.replaceChildren();
+          : "当前路网无法到达该目的地。");
         return;
       }
 
-      const points = result.path.map((nodeId) => {
-        const node = nodeById.get(nodeId);
-        return `${node.x},${node.y}`;
-      }).join(" ");
+      const routeNodes = result.path.map((nodeId) => nodeById.get(nodeId));
+      if (routeNodes.some((node) => !hasValidPoint(node))) {
+        clearRoute("规划结果包含无效节点坐标，请检查图数据。");
+        return;
+      }
+      const points = routeNodes.map((node) => `${node.x},${node.y}`).join(" ");
 
       routeLine.setAttribute("points", points);
       renderEdgeState(result.pathEdgeIds);
@@ -828,8 +991,12 @@
         selectSearchResult();
       }
     });
-    document.querySelectorAll("[data-start][data-end]").forEach((button) => {
+    quickRouteButtons.forEach((button) => {
       button.addEventListener("click", () => {
+        if (!poiById || !poiById.has(button.dataset.start) || !poiById.has(button.dataset.end)) {
+          clearRoute("当前图数据不包含这条快捷路线所需的 POI。");
+          return;
+        }
         startSelect.value = button.dataset.start;
         endSelect.value = button.dataset.end;
         calculateAndRenderRoute();

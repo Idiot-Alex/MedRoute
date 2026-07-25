@@ -206,7 +206,7 @@
 
     .map-frame {
       width: min(100%, 1120px);
-      min-width: 860px;
+      min-width: 0;
       aspect-ratio: 1000 / 620;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -326,6 +326,10 @@
       .panel.right {
         border: 0;
         border-bottom: 1px solid var(--line);
+      }
+
+      .map-frame {
+        width: 100%;
       }
     }
   </style>
@@ -522,6 +526,29 @@
       return graph.nodes.find((node) => node.id === id);
     }
 
+    function syncDefaults() {
+      const currentDefaults = graph.defaults && typeof graph.defaults === "object"
+        ? graph.defaults
+        : {};
+      const poiIds = new Set(graph.pois.map((poi) => poi.id));
+      const startPoiId = poiIds.has(currentDefaults.startPoiId)
+        ? currentDefaults.startPoiId
+        : (graph.pois[0] ? graph.pois[0].id : "");
+      const fallbackEnd = graph.pois.find((poi) => poi.id !== startPoiId) || graph.pois[0];
+      let endPoiId = poiIds.has(currentDefaults.endPoiId)
+        ? currentDefaults.endPoiId
+        : (fallbackEnd ? fallbackEnd.id : "");
+      if (endPoiId === startPoiId && graph.pois.length > 1) {
+        endPoiId = fallbackEnd.id;
+      }
+      graph.defaults = {
+        ...currentDefaults,
+        startPoiId,
+        endPoiId,
+        routeMode: currentDefaults.routeMode === "accessible" ? "accessible" : "normal"
+      };
+    }
+
     function setMode(nextMode) {
       mode = nextMode;
       selected = null;
@@ -624,10 +651,13 @@
     }
 
     function nearestNodeId(point) {
+      if (graph.nodes.length === 0) {
+        return null;
+      }
       return graph.nodes.reduce((best, node) => {
         const distance = Math.hypot(node.x - point.x, node.y - point.y);
         return distance < best.distance ? { id: node.id, distance } : best;
-      }, { id: graph.nodes[0].id, distance: Infinity }).id;
+      }, { id: null, distance: Infinity }).id;
     }
 
     function addNode(point) {
@@ -644,16 +674,22 @@
     }
 
     function addPoi(point) {
+      const nearestNode = nearestNodeId(point);
+      if (nearestNode === null) {
+        statusText.textContent = "当前没有路径节点，请先新增至少一个节点，再创建 POI。";
+        return;
+      }
       const poi = {
         id: nextId("P", graph.pois),
         name: `新 POI ${graph.pois.length + 1}`,
         category: "other",
-        nodeId: nearestNodeId(point),
+        nodeId: nearestNode,
         x: point.x,
         y: point.y,
         searchKeywords: []
       };
       graph.pois.push(poi);
+      syncDefaults();
       selectObject("poi", poi.id);
       statusText.textContent = `已创建 POI ${poi.id}。`;
     }
@@ -688,6 +724,7 @@
         id: nextId("E", graph.edges),
         from: from.id,
         to: to.id,
+        direction: "both",
         distance: Math.max(1, Math.round(Math.hypot(from.x - to.x, from.y - to.y) / 10)),
         walkTime: Math.max(1, Math.round(Math.hypot(from.x - to.x, from.y - to.y) / 180)),
         accessible: true,
@@ -756,6 +793,7 @@
         graph.pois = graph.pois.filter((poi) => poi.id !== selected.id);
       }
 
+      syncDefaults();
       selected = null;
       clearForm();
       statusText.textContent = "选中对象已删除。";
@@ -779,7 +817,7 @@
             "edge",
             (edge.status || "enabled") !== "enabled" ? "closed" : "",
             edge.accessible === false ? "limited" : "",
-            selected?.kind === "edge" && selected.id === edge.id ? "selected" : ""
+            selected && selected.kind === "edge" && selected.id === edge.id ? "selected" : ""
           ].filter(Boolean).join(" "),
           x1: from.x,
           y1: from.y,
@@ -802,7 +840,7 @@
           class: [
             "node-point",
             pendingEdgeFrom === node.id ? "pending" : "",
-            selected?.kind === "node" && selected.id === node.id ? "selected" : ""
+            selected && selected.kind === "node" && selected.id === node.id ? "selected" : ""
           ].filter(Boolean).join(" "),
           cx: node.x,
           cy: node.y,
@@ -833,7 +871,7 @@
       graph.pois.forEach((poi) => {
         const group = svgElement("g", { "data-poi": poi.id });
         const point = svgElement("circle", {
-          class: `poi-point ${selected?.kind === "poi" && selected.id === poi.id ? "selected" : ""}`,
+          class: `poi-point ${selected && selected.kind === "poi" && selected.id === poi.id ? "selected" : ""}`,
           cx: poi.x,
           cy: poi.y,
           r: 11

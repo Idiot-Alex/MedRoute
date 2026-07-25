@@ -1,6 +1,6 @@
 package com.medroute.nav.service;
 
-import com.medroute.nav.algorithm.AStarPathFinder;
+import com.medroute.nav.algorithm.DijkstraPathFinder;
 import com.medroute.nav.dto.PathPoint;
 import com.medroute.nav.dto.PoiSummary;
 import com.medroute.nav.dto.RouteRequest;
@@ -17,17 +17,27 @@ import java.util.List;
 @Service
 public class RouteService {
     private final DemoGraphService graphService;
-    private final AStarPathFinder pathFinder = new AStarPathFinder();
+    private final DijkstraPathFinder pathFinder = new DijkstraPathFinder();
 
     public RouteService(DemoGraphService graphService) {
         this.graphService = graphService;
     }
 
     public RouteResponse route(RouteRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Route request is required");
+        }
         if (request.hospitalId() != graphService.floor().hospitalId()) {
             throw new IllegalArgumentException("Unknown hospitalId: " + request.hospitalId());
         }
         RouteMode routeMode = RouteMode.from(request.routeMode());
+        if (!routeMode.supported()) {
+            throw new IllegalArgumentException(
+                "Unsupported routeMode: " + routeMode.apiValue()
+            );
+        }
+        requirePoiId(request.startPoiId(), "startPoiId");
+        requirePoiId(request.endPoiId(), "endPoiId");
         Poi startPoi = graphService.poi(request.startPoiId())
             .orElseThrow(() -> new IllegalArgumentException("Unknown startPoiId: " + request.startPoiId()));
         Poi endPoi = graphService.poi(request.endPoiId())
@@ -41,7 +51,7 @@ public class RouteService {
             .filter(edge -> usable(edge, routeMode))
             .toList();
 
-        AStarPathFinder.PathResult result = pathFinder.findPath(
+        DijkstraPathFinder.PathResult result = pathFinder.findPath(
             startPoi.nodeId(),
             endPoi.nodeId(),
             graphService.nodes(),
@@ -77,10 +87,10 @@ public class RouteService {
         if (!edge.enabled()) {
             return false;
         }
-        if (routeMode == RouteMode.ACCESSIBLE && !edge.accessible()) {
+        if ("staff".equalsIgnoreCase(edge.type())) {
             return false;
         }
-        return routeMode != RouteMode.STAFF || "staff".equals(edge.type()) || "walk".equals(edge.type());
+        return routeMode != RouteMode.ACCESSIBLE || edge.accessible();
     }
 
     private PathPoint pathPoint(String nodeId) {
@@ -89,13 +99,18 @@ public class RouteService {
         return new PathPoint(node.id(), graphService.floor().floorId(), node.x(), node.y());
     }
 
-    private List<String> buildSteps(Poi startPoi, Poi endPoi, AStarPathFinder.PathResult result) {
+    private List<String> buildSteps(
+        Poi startPoi,
+        Poi endPoi,
+        DijkstraPathFinder.PathResult result
+    ) {
         List<String> steps = new ArrayList<>();
         steps.add("从" + startPoi.name() + "出发，进入" + nodeName(result.nodeIds().get(0)) + "。");
 
         for (int index = 0; index < result.edgeIds().size(); index++) {
-            PathEdge edge = graphService.edge(result.edgeIds().get(index))
-                .orElseThrow(() -> new IllegalStateException("Missing path edge: " + result.edgeIds().get(index)));
+            String edgeId = result.edgeIds().get(index);
+            PathEdge edge = graphService.edge(edgeId)
+                    .orElseThrow(() -> new IllegalStateException("Missing path edge: " + edgeId));
             String fromName = nodeName(result.nodeIds().get(index));
             String toName = nodeName(result.nodeIds().get(index + 1));
             String remark = edge.remark() == null || edge.remark().isBlank() ? "" : " " + edge.remark();
@@ -117,5 +132,11 @@ public class RouteService {
             return String.valueOf((long) value);
         }
         return String.format("%.1f", value);
+    }
+
+    private void requirePoiId(String poiId, String fieldName) {
+        if (poiId == null || poiId.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " is required");
+        }
     }
 }

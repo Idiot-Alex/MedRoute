@@ -2,6 +2,7 @@ package com.medroute.nav.service;
 
 import com.medroute.nav.dto.FloorMapResponse;
 import com.medroute.nav.dto.MapGraphResponse;
+import com.medroute.nav.model.EdgeDirection;
 import com.medroute.nav.model.FloorInfo;
 import com.medroute.nav.model.Hospital;
 import com.medroute.nav.model.MapGraph;
@@ -12,11 +13,20 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
 public class DemoGraphService {
-    private final MapGraph graph = buildGraph();
+    private final MapGraph graph;
+
+    public DemoGraphService() {
+        this(buildGraph());
+    }
+
+    DemoGraphService(MapGraph graph) {
+        this.graph = Objects.requireNonNull(graph, "graph");
+    }
 
     public List<Hospital> hospitals() {
         return List.of(new Hospital(1, "测试医院", "上海"));
@@ -104,7 +114,7 @@ public class DemoGraphService {
         }
     }
 
-    private MapGraph buildGraph() {
+    private static MapGraph buildGraph() {
         FloorInfo floor = new FloorInfo(
             1,
             "测试医院",
@@ -133,18 +143,18 @@ public class DemoGraphService {
         );
 
         List<PathEdge> edges = List.of(
-            new PathEdge("E1", "N11", "N1", 6, 1, true, "enabled", "walk", "入口门厅到挂号处。"),
-            new PathEdge("E2", "N1", "N2", 12, 1, true, "enabled", "walk", "大厅主通道。"),
-            new PathEdge("E3", "N2", "N3", 14, 1, true, "enabled", "walk", "大厅中心通道。"),
-            new PathEdge("E4", "N3", "N4", 12, 1, true, "enabled", "walk", "中庭主通道。"),
-            new PathEdge("E5", "N4", "N5", 8, 1, true, "enabled", "walk", "检验科入口。"),
-            new PathEdge("E6", "N4", "N6", 13, 1, true, "enabled", "walk", "药房排队区外侧。"),
-            new PathEdge("E7", "N6", "N7", 8, 1, true, "enabled", "walk", "药房取药窗口。"),
-            new PathEdge("E8", "N4", "N8", 14, 1, true, "enabled", "walk", "影像科方向主通道。"),
-            new PathEdge("E9", "N8", "N9", 10, 1, true, "enabled", "walk", "影像科门口。"),
-            new PathEdge("E10", "N2", "N10", 8, 1, true, "enabled", "walk", "卫生间入口。"),
-            new PathEdge("E11", "N3", "N12", 12, 1, true, "enabled", "walk", "电梯厅入口。"),
-            new PathEdge("E12", "N12", "N8", 10, 1, false, "enabled", "walk", "窄通道，轮椅路线不推荐。")
+            new PathEdge("E1", "N11", "N1", EdgeDirection.BOTH, 6, 1, true, "enabled", "walk", "入口门厅到挂号处。"),
+            new PathEdge("E2", "N1", "N2", EdgeDirection.BOTH, 12, 1, true, "enabled", "walk", "大厅主通道。"),
+            new PathEdge("E3", "N2", "N3", EdgeDirection.BOTH, 14, 1, true, "enabled", "walk", "大厅中心通道。"),
+            new PathEdge("E4", "N3", "N4", EdgeDirection.BOTH, 12, 1, true, "enabled", "walk", "中庭主通道。"),
+            new PathEdge("E5", "N4", "N5", EdgeDirection.BOTH, 8, 1, true, "enabled", "walk", "检验科入口。"),
+            new PathEdge("E6", "N4", "N6", EdgeDirection.BOTH, 13, 1, true, "enabled", "walk", "药房排队区外侧。"),
+            new PathEdge("E7", "N6", "N7", EdgeDirection.BOTH, 8, 1, true, "enabled", "walk", "药房取药窗口。"),
+            new PathEdge("E8", "N4", "N8", EdgeDirection.BOTH, 14, 1, true, "enabled", "walk", "影像科方向主通道。"),
+            new PathEdge("E9", "N8", "N9", EdgeDirection.BOTH, 10, 1, true, "enabled", "walk", "影像科门口。"),
+            new PathEdge("E10", "N2", "N10", EdgeDirection.BOTH, 8, 1, true, "enabled", "walk", "卫生间入口。"),
+            new PathEdge("E11", "N3", "N12", EdgeDirection.BOTH, 12, 1, true, "enabled", "walk", "电梯厅入口。"),
+            new PathEdge("E12", "N12", "N8", EdgeDirection.BOTH, 10, 1, false, "enabled", "walk", "窄通道，轮椅路线不推荐。")
         );
 
         List<Poi> pois = List.of(
