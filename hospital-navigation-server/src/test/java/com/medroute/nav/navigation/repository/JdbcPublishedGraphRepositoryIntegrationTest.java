@@ -41,6 +41,11 @@ class JdbcPublishedGraphRepositoryIntegrationTest {
         assertThat(graph.nodes()).hasSize(15);
         assertThat(graph.pois()).hasSize(4);
         assertThat(
+            graph.pois()
+                .get(InMemoryPublishedGraphService.POI_CLINIC_2F_ID)
+                .searchKeywords()
+        ).contains("jianyanke", "jyk");
+        assertThat(
             graph.connectors()
                 .get(InMemoryPublishedGraphService.ELEVATOR_A_ID)
                 .floorIds()

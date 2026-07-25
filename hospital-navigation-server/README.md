@@ -15,6 +15,8 @@ MedRoute 的 Spring Boot 后端。当前版本以 PostgreSQL 中的当前发布�
 - 路径、跨层连接或整组设施的定时/立即封闭及撤销。
 - 发布和回滚时按稳定公开 ID 迁移仍生效的运营封闭。
 - 统一客户端错误响应和 `X-Request-Id`。
+- 当前发布 POI 搜索支持人工维护的中文别名、拼音和首字母关键词。
+- 使用稳定 POI 业务编码生成固定点导航二维码 PNG。
 
 内存三层图仅保留为算法单元测试 fixture，不再是正式运行时数据源。
 
@@ -91,6 +93,7 @@ POST   /api/admin/releases/{releaseId}/rollback
 GET    /api/admin/buildings/{buildingId}/operations/closures
 POST   /api/admin/buildings/{buildingId}/operations/closures
 DELETE /api/admin/operations/closures/{closureId}
+POST   /api/admin/navigation-qr-code
 ```
 
 草稿写入、底图替换、校验、发布和删除使用 `If-Match` 携带当前内容修订号。
@@ -109,6 +112,7 @@ DELETE /api/admin/operations/closures/{closureId}
 - JDBC 发布图读取、底图上传和坐标缩放。
 - 草稿校验、发布、回滚、删除及运营封闭迁移。
 - 封闭设施后的备选路线和恢复后的最优路线。
+- 固定点二维码生成、PNG 尺寸、地址解码和非法协议拒绝。
 
 本地验收还应使用 Docker PostgreSQL 运行后端并在浏览器完成一次发布/回滚闭环。
 

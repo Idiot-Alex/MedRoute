@@ -678,6 +678,12 @@ textarea:disabled {
   stroke-width: 5;
 }
 
+.poi-marker circle:focus-visible {
+  outline: none;
+  stroke: var(--selected-soft);
+  stroke-width: 7;
+}
+
 .poi-marker text {
   fill: #102025;
   paint-order: stroke;
@@ -875,6 +881,13 @@ textarea:disabled {
 }
 
 .danger-zone {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.poi-publication-action {
+  display: grid;
+  gap: 7px;
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
@@ -1087,6 +1100,88 @@ dialog::backdrop {
   line-height: 1.5;
 }
 
+.qr-dialog {
+  width: min(92vw, 600px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.qr-poi-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+}
+
+.qr-poi-summary > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.qr-poi-summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.qr-poi-summary strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qr-preview {
+  display: grid;
+  place-items: center;
+  width: min(240px, 100%);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-strong);
+}
+
+.qr-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.qr-preview span {
+  padding: 16px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.qr-address-warning {
+  margin: -5px 0 0;
+  padding: 9px 10px;
+  border-left: 3px solid var(--warning);
+  color: #5f400c;
+  background: var(--warning-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+#qrNavigationUrl {
+  min-height: 70px;
+  overflow-wrap: anywhere;
+  resize: vertical;
+}
+
+.qr-actions {
+  flex-wrap: wrap;
+}
+
 .toast {
   position: fixed;
   right: 18px;
@@ -1197,6 +1292,16 @@ dialog::backdrop {
   .field-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .qr-poi-summary {
+    align-items: start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .qr-actions .button {
+    flex: 1 1 120px;
   }
 }
 

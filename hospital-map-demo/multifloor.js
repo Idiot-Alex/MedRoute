@@ -12,6 +12,18 @@
   const requestedEndPoi =
     query.get("endPoi") || query.get("endPoiCode") || "";
   const svgNamespace = "http://www.w3.org/2000/svg";
+  const categoryLabels = {
+    department: "科室",
+    diagnostic: "医技",
+    elevator: "电梯",
+    entrance: "出入口",
+    facility: "设施",
+    pharmacy: "药房",
+    service: "服务",
+    stairs: "楼梯",
+    toilet: "卫生间",
+    window: "窗口",
+  };
 
   const state = {
     context: null,
@@ -19,6 +31,9 @@
     selectedFloorId: null,
     routeMode: "normal",
     loadingRoute: false,
+    poiSearchEndpoint: "start",
+    poiSearchFloorId: "",
+    poiSearchReturnFocus: null,
   };
 
   const elements = {
@@ -28,6 +43,10 @@
     routeForm: document.querySelector("#route-form"),
     startPoi: document.querySelector("#start-poi"),
     endPoi: document.querySelector("#end-poi"),
+    startPoiTrigger: document.querySelector("#start-poi-trigger"),
+    endPoiTrigger: document.querySelector("#end-poi-trigger"),
+    startPoiValue: document.querySelector("#start-poi-value"),
+    endPoiValue: document.querySelector("#end-poi-value"),
     swapRoute: document.querySelector("#swap-route"),
     calculateRoute: document.querySelector("#calculate-route"),
     formMessage: document.querySelector("#form-message"),
@@ -51,6 +70,14 @@
     routeModeLabel: document.querySelector("#route-mode-label"),
     routeSummary: document.querySelector("#route-summary"),
     routeSteps: document.querySelector("#route-steps"),
+    poiSearchDialog: document.querySelector("#poi-search-dialog"),
+    poiSearchEndpoint: document.querySelector("#poi-search-endpoint"),
+    poiSearchInput: document.querySelector("#poi-search-input"),
+    poiFloorFilters: document.querySelector("#poi-floor-filters"),
+    poiSearchCount: document.querySelector("#poi-search-count"),
+    poiSearchResults: document.querySelector("#poi-search-results"),
+    poiSearchEmpty: document.querySelector("#poi-search-empty"),
+    closePoiSearch: document.querySelector("#close-poi-search"),
   };
 
   function requestUrl(path) {
@@ -74,6 +101,8 @@
   function setControlsDisabled(disabled) {
     elements.startPoi.disabled = disabled;
     elements.endPoi.disabled = disabled;
+    elements.startPoiTrigger.disabled = disabled;
+    elements.endPoiTrigger.disabled = disabled;
     elements.swapRoute.disabled = disabled;
     elements.calculateRoute.disabled = disabled;
     const supportedModes = new Set(
@@ -88,6 +117,17 @@
 
   function displayFloorName(poi) {
     return `${poi.floorCode} ${poi.name}`;
+  }
+
+  function updatePoiTriggerLabels() {
+    const startPoi = state.context && getPoi(elements.startPoi.value);
+    const endPoi = state.context && getPoi(elements.endPoi.value);
+    elements.startPoiValue.textContent = startPoi
+      ? `${startPoi.floorCode} · ${startPoi.name}`
+      : "选择起点";
+    elements.endPoiValue.textContent = endPoi
+      ? `${endPoi.floorCode} · ${endPoi.name}`
+      : "选择终点";
   }
 
   function populatePoiSelects() {
@@ -121,6 +161,7 @@
 
     elements.startPoi.value = defaults.start.id;
     elements.endPoi.value = defaults.end.id;
+    updatePoiTriggerLabels();
   }
 
   function currentFloor() {
@@ -131,6 +172,181 @@
 
   function getPoi(id) {
     return state.context.pois.find((poi) => poi.id === id);
+  }
+
+  function normalizeSearchText(value) {
+    return String(value || "")
+      .normalize("NFKC")
+      .toLocaleLowerCase("zh-CN");
+  }
+
+  function categoryLabel(category) {
+    return categoryLabels[category] || category || "地点";
+  }
+
+  function poiMatchesSearch(poi, terms) {
+    if (terms.length === 0) {
+      return true;
+    }
+    const corpus = normalizeSearchText(
+      [
+        poi.name,
+        poi.code,
+        poi.floorCode,
+        categoryLabel(poi.category),
+        poi.category,
+        ...(poi.searchKeywords || []),
+      ].join(" ")
+    );
+    return terms.every((term) => corpus.includes(term));
+  }
+
+  function createPoiFloorFilter(label, floorId) {
+    const selected = state.poiSearchFloorId === floorId;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "poi-floor-filter";
+    button.textContent = label;
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-selected", String(selected));
+    button.addEventListener("click", () => {
+      state.poiSearchFloorId = floorId;
+      renderPoiSearch();
+    });
+    return button;
+  }
+
+  function renderPoiFloorFilters() {
+    elements.poiFloorFilters.replaceChildren(
+      createPoiFloorFilter("全部", "")
+    );
+    state.context.floors.forEach((floor) => {
+      elements.poiFloorFilters.append(
+        createPoiFloorFilter(floor.code, floor.id)
+      );
+    });
+  }
+
+  function createPoiSearchResult(poi, selectedPoiId) {
+    const item = document.createElement("li");
+    item.className = "poi-search-result";
+    item.classList.toggle("is-selected", poi.id === selectedPoiId);
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.poiId = poi.id;
+    button.setAttribute("aria-label", `${poi.name}，${poi.floorCode}`);
+    if (poi.id === selectedPoiId) {
+      button.setAttribute("aria-current", "true");
+    }
+
+    const copy = document.createElement("span");
+    copy.className = "poi-result-copy";
+    const name = document.createElement("span");
+    name.className = "poi-result-name";
+    name.textContent = poi.name;
+    const detail = document.createElement("span");
+    detail.className = "poi-result-detail";
+    const keywords = poi.searchKeywords || [];
+    const chineseKeywords = keywords.filter((keyword) =>
+      /[\u3400-\u9fff]/.test(keyword)
+    );
+    const visibleKeywords = (
+      chineseKeywords.length > 0 ? chineseKeywords : keywords
+    ).slice(0, 3);
+    detail.textContent = [
+      categoryLabel(poi.category),
+      ...visibleKeywords,
+    ].join(" · ");
+    copy.append(name, detail);
+
+    const floor = document.createElement("span");
+    floor.className = "poi-result-floor";
+    floor.textContent =
+      poi.id === selectedPoiId ? `${poi.floorCode} ✓` : poi.floorCode;
+    button.append(copy, floor);
+    button.addEventListener("click", () => {
+      selectPoiForEndpoint(poi.id);
+    });
+    item.append(button);
+    return item;
+  }
+
+  function renderPoiSearch() {
+    if (!state.context) {
+      return;
+    }
+    renderPoiFloorFilters();
+    const terms = normalizeSearchText(elements.poiSearchInput.value)
+      .split(/\s+/)
+      .filter(Boolean);
+    const results = state.context.pois.filter(
+      (poi) =>
+        (!state.poiSearchFloorId || poi.floorId === state.poiSearchFloorId) &&
+        poiMatchesSearch(poi, terms)
+    );
+    const selectedPoiId =
+      state.poiSearchEndpoint === "start"
+        ? elements.startPoi.value
+        : elements.endPoi.value;
+    elements.poiSearchResults.replaceChildren(
+      ...results.map((poi) => createPoiSearchResult(poi, selectedPoiId))
+    );
+    elements.poiSearchCount.textContent = `${results.length} 个地点`;
+    elements.poiSearchEmpty.hidden = results.length > 0;
+    elements.poiSearchResults.hidden = results.length === 0;
+  }
+
+  function openPoiSearch(endpoint) {
+    if (!state.context || elements.poiSearchDialog.open) {
+      return;
+    }
+    state.poiSearchEndpoint = endpoint;
+    state.poiSearchFloorId = "";
+    state.poiSearchReturnFocus =
+      endpoint === "start" ? elements.startPoiTrigger : elements.endPoiTrigger;
+    elements.poiSearchEndpoint.textContent =
+      endpoint === "start" ? "选择起点" : "选择终点";
+    elements.poiSearchInput.value = "";
+    renderPoiSearch();
+    elements.poiSearchDialog.showModal();
+    window.requestAnimationFrame(() => elements.poiSearchInput.focus());
+  }
+
+  function closePoiSearch() {
+    if (!elements.poiSearchDialog.open) {
+      return;
+    }
+    elements.poiSearchDialog.close();
+    if (state.poiSearchReturnFocus) {
+      state.poiSearchReturnFocus.focus();
+    }
+  }
+
+  function syncPoiQuery() {
+    const startPoi = getPoi(elements.startPoi.value);
+    const endPoi = getPoi(elements.endPoi.value);
+    const nextQuery = new URLSearchParams(window.location.search);
+    nextQuery.delete("startPoiCode");
+    nextQuery.delete("endPoiCode");
+    if (startPoi) {
+      nextQuery.set("startPoi", startPoi.code);
+    }
+    if (endPoi) {
+      nextQuery.set("endPoi", endPoi.code);
+    }
+    const nextUrl = `${window.location.pathname}?${nextQuery.toString()}${window.location.hash}`;
+    window.history.replaceState(null, "", nextUrl);
+  }
+
+  function selectPoiForEndpoint(poiId) {
+    const select =
+      state.poiSearchEndpoint === "start" ? elements.startPoi : elements.endPoi;
+    select.value = poiId;
+    updatePoiTriggerLabels();
+    syncPoiQuery();
+    clearRoute();
+    closePoiSearch();
   }
 
   function routeModeLabel() {
@@ -573,11 +789,37 @@
     const previousStart = elements.startPoi.value;
     elements.startPoi.value = elements.endPoi.value;
     elements.endPoi.value = previousStart;
+    updatePoiTriggerLabels();
+    syncPoiQuery();
     clearRoute();
   });
 
   [elements.startPoi, elements.endPoi].forEach((select) => {
-    select.addEventListener("change", clearRoute);
+    select.addEventListener("change", () => {
+      updatePoiTriggerLabels();
+      syncPoiQuery();
+      clearRoute();
+    });
+  });
+
+  elements.startPoiTrigger.addEventListener("click", () => {
+    openPoiSearch("start");
+  });
+
+  elements.endPoiTrigger.addEventListener("click", () => {
+    openPoiSearch("end");
+  });
+
+  elements.poiSearchInput.addEventListener("input", renderPoiSearch);
+  elements.closePoiSearch.addEventListener("click", closePoiSearch);
+  elements.poiSearchDialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closePoiSearch();
+  });
+  elements.poiSearchDialog.addEventListener("click", (event) => {
+    if (event.target === elements.poiSearchDialog) {
+      closePoiSearch();
+    }
   });
 
   elements.modeButtons.forEach((button) => {

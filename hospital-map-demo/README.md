@@ -8,9 +8,10 @@ This directory contains the phase-one single-floor route guidance demo.
 - `editor.html`: minimal graph editor for nodes, edges, POIs, and JSON export.
 - `graph-data.js`: floor metadata, default route, path nodes, path edges, and POIs.
 - `multifloor.html`: mobile-first navigation UI that renders the backend route over per-floor images.
-- `multifloor.js` / `multifloor.css`: backend integration and responsive map tool UI.
+- `multifloor.js` / `multifloor.css`: backend integration, POI search, deep links,
+  and responsive map tool UI.
 - `admin.html` / `admin.js` / `admin.css`: desktop-first persistent multi-floor map authoring,
-  validation, publishing, rollback, and operation-closure workspace.
+  validation, publishing, rollback, QR-code generation, and operation-closure workspace.
 - `assets/hndfsrmyy/`: clearly marked local test floor-plan assets and source notes.
 
 ## Run Locally
@@ -53,8 +54,21 @@ requests to `POST /api/routes`. It does not duplicate route calculation in the b
 The admin page reads and writes release workspaces through `/api/admin`. It edits
 drafts only, uploads a separate PNG/JPEG for each floor, validates before publish,
 can reactivate a historical release, and manages temporary route or connector
-closures. PostgreSQL and the backend are required; admin edits are not kept only
-in browser memory.
+closures. For an enabled POI in the current active release, it can also request a
+fixed-point navigation QR code from `POST /api/admin/navigation-qr-code`, copy its
+business-code deep link, and download the PNG. PostgreSQL and the backend are
+required; admin edits are not kept only in browser memory.
+
+The mobile page uses a touch-oriented search sheet for start and destination POIs.
+It filters the active release by name, code, category, floor, aliases, pinyin, and
+pinyin initials. Deep links use stable business codes:
+
+```text
+multifloor.html?building={buildingId}&startPoi={poiCode}
+```
+
+Loopback addresses such as `127.0.0.1` work only on the same computer. Use a LAN
+address reachable from the phone for physical QR-code testing.
 
 To load graph data from the phase-two backend instead of `graph-data.js`, run the server and open:
 

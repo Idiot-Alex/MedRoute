@@ -9,7 +9,7 @@
   />
   <title>MedRoute 地图维护</title>
   <link rel="icon" href="data:," />
-  <link rel="stylesheet" href="admin.css?v=20260726-11" />
+  <link rel="stylesheet" href="admin.css?v=20260726-16" />
 </head>
 <body>
   <div class="admin-shell">
@@ -411,6 +411,52 @@
     </form>
   </dialog>
 
+  <dialog id="poiQrDialog" class="qr-dialog">
+    <div class="dialog-form">
+      <div class="dialog-heading">
+        <h2>固定点导航二维码</h2>
+        <button class="dialog-close" type="button" data-close-dialog aria-label="关闭">×</button>
+      </div>
+
+      <div class="qr-poi-summary">
+        <div>
+          <span>起点</span>
+          <strong id="qrPoiName">导航 POI</strong>
+        </div>
+        <span id="qrPoiMeta">等待地点信息</span>
+      </div>
+
+      <div class="qr-preview" id="qrPreview">
+        <img id="qrImage" alt="固定点导航二维码" hidden />
+        <span id="qrPlaceholder">正在生成二维码</span>
+      </div>
+
+      <label class="field">
+        <span>导航页面基础地址</span>
+        <input id="qrBaseUrlInput" type="url" required />
+      </label>
+      <p class="qr-address-warning" id="qrAddressWarning" hidden>
+        当前地址只能在本机访问，手机扫码后无法打开。
+      </p>
+      <label class="field">
+        <span>二维码导航地址</span>
+        <textarea id="qrNavigationUrl" rows="3" readonly></textarea>
+      </label>
+
+      <div class="dialog-actions qr-actions">
+        <button class="button ghost" id="copyQrUrlButton" type="button">
+          复制地址
+        </button>
+        <button class="button secondary" id="downloadQrButton" type="button" disabled>
+          下载 PNG
+        </button>
+        <button class="button primary" id="generateQrButton" type="button">
+          重新生成
+        </button>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="discardDraftDialog">
     <form class="dialog-form" id="discardDraftForm" method="dialog">
       <div class="dialog-heading">
@@ -432,6 +478,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="admin.js?v=20260726-11"></script>
+  <script src="admin.js?v=20260726-16"></script>
 </body>
 </html>

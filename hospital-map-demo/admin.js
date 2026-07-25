@@ -86,6 +86,17 @@
     rollbackDialog: document.querySelector("#rollbackDialog"),
     rollbackForm: document.querySelector("#rollbackForm"),
     rollbackReasonInput: document.querySelector("#rollbackReasonInput"),
+    poiQrDialog: document.querySelector("#poiQrDialog"),
+    qrPoiName: document.querySelector("#qrPoiName"),
+    qrPoiMeta: document.querySelector("#qrPoiMeta"),
+    qrImage: document.querySelector("#qrImage"),
+    qrPlaceholder: document.querySelector("#qrPlaceholder"),
+    qrBaseUrlInput: document.querySelector("#qrBaseUrlInput"),
+    qrAddressWarning: document.querySelector("#qrAddressWarning"),
+    qrNavigationUrl: document.querySelector("#qrNavigationUrl"),
+    copyQrUrlButton: document.querySelector("#copyQrUrlButton"),
+    downloadQrButton: document.querySelector("#downloadQrButton"),
+    generateQrButton: document.querySelector("#generateQrButton"),
     discardDraftDialog: document.querySelector("#discardDraftDialog"),
     discardDraftForm: document.querySelector("#discardDraftForm"),
     discardDraftCode: document.querySelector("#discardDraftCode"),
@@ -116,7 +127,11 @@
     drag: null,
     ignoreMapClick: false,
     zoom: 100,
-    activePanel: "inspector"
+    activePanel: "inspector",
+    qrPoi: null,
+    qrBlob: null,
+    qrObjectUrl: null,
+    qrBusy: false
   };
 
   class ApiError extends Error {
@@ -501,6 +516,9 @@
         cy: poi.y,
         r: 12
       });
+      marker.setAttribute("role", "button");
+      marker.setAttribute("tabindex", "0");
+      marker.setAttribute("aria-label", `POI ${poi.name}`);
       const label = svgElement("text", {
         x: poi.x + 18,
         y: poi.y - 15
@@ -509,6 +527,13 @@
       group.append(marker, label);
       group.addEventListener("click", (event) => {
         event.stopPropagation();
+        selectObject("poi", poi.id);
+      });
+      marker.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+        event.preventDefault();
         selectObject("poi", poi.id);
       });
       elements.poiLayer.append(group);
@@ -717,6 +742,7 @@
       disabledAttribute() + ` /></label>` +
       checkField("fieldAccessible", "POI 可无障碍到达", poi.accessible) +
       checkField("fieldEnabled", "POI 启用", poi.enabled) +
+      poiQrActionHtml(poi) +
       dangerZone("删除 POI");
     bindText("fieldName", (value) => {
       poi.name = value;
@@ -757,6 +783,10 @@
       poi.enabled = value;
       changed(true);
     });
+    const qrButton = document.querySelector("#generatePoiQrButton");
+    if (qrButton) {
+      qrButton.addEventListener("click", () => openPoiQrDialog(poi));
+    }
     bindDelete();
   }
 
@@ -1794,6 +1824,223 @@
     elements.linkDialog.showModal();
   }
 
+  function defaultNavigationBaseUrl() {
+    const navigationUrl = new URL("multifloor.html", window.location.href);
+    navigationUrl.search = "";
+    navigationUrl.hash = "";
+    navigationUrl.searchParams.set("api", API_BASE);
+    return navigationUrl.toString();
+  }
+
+  function buildQrNavigationUrl() {
+    if (!state.qrPoi) {
+      throw new Error("未选择二维码起点。");
+    }
+    let navigationUrl;
+    try {
+      navigationUrl = new URL(elements.qrBaseUrlInput.value.trim());
+    } catch (error) {
+      throw new Error("导航页面基础地址无效。");
+    }
+    if (!["http:", "https:"].includes(navigationUrl.protocol)) {
+      throw new Error("导航页面必须使用 HTTP 或 HTTPS 地址。");
+    }
+    navigationUrl.searchParams.delete("buildingId");
+    navigationUrl.searchParams.delete("startPoiCode");
+    navigationUrl.searchParams.delete("endPoi");
+    navigationUrl.searchParams.delete("endPoiCode");
+    navigationUrl.searchParams.set("building", BUILDING_ID);
+    navigationUrl.searchParams.set("startPoi", state.qrPoi.code);
+    return navigationUrl.toString();
+  }
+
+  function isLoopbackHostname(hostname) {
+    return ["127.0.0.1", "localhost", "::1", "[::1]"].includes(
+      hostname.toLowerCase()
+    );
+  }
+
+  function navigationUrlIsLocal(navigationUrl) {
+    try {
+      const parsed = new URL(navigationUrl);
+      if (isLoopbackHostname(parsed.hostname)) {
+        return true;
+      }
+      const apiParameter = parsed.searchParams.get("api");
+      return apiParameter
+        ? isLoopbackHostname(new URL(apiParameter).hostname)
+        : false;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function updateQrNavigationUrl() {
+    try {
+      const navigationUrl = buildQrNavigationUrl();
+      elements.qrNavigationUrl.value = navigationUrl;
+      elements.qrAddressWarning.hidden =
+        !navigationUrlIsLocal(navigationUrl);
+      return navigationUrl;
+    } catch (error) {
+      elements.qrNavigationUrl.value = "";
+      elements.qrAddressWarning.hidden = true;
+      throw error;
+    }
+  }
+
+  function releaseQrObjectUrl() {
+    if (state.qrObjectUrl) {
+      URL.revokeObjectURL(state.qrObjectUrl);
+      state.qrObjectUrl = null;
+    }
+    state.qrBlob = null;
+  }
+
+  function showQrPlaceholder(message) {
+    elements.qrImage.hidden = true;
+    elements.qrImage.removeAttribute("src");
+    elements.qrPlaceholder.textContent = message;
+    elements.qrPlaceholder.hidden = false;
+  }
+
+  function setQrBusy(value) {
+    state.qrBusy = value;
+    elements.qrBaseUrlInput.disabled = value;
+    elements.generateQrButton.disabled = value;
+    elements.copyQrUrlButton.disabled =
+      value || !elements.qrNavigationUrl.value;
+    elements.downloadQrButton.disabled = value || !state.qrBlob;
+    elements.generateQrButton.textContent = value
+      ? "正在生成"
+      : "重新生成";
+  }
+
+  async function requestQrCode(navigationUrl) {
+    let response;
+    try {
+      response = await fetch(`${API_BASE}/api/admin/navigation-qr-code`, {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "Accept": "image/png",
+          "Content-Type": "application/json",
+          "X-Request-Id": `admin-qr-${crypto.randomUUID()}`
+        },
+        body: JSON.stringify({navigationUrl})
+      });
+    } catch (error) {
+      throw new ApiError(
+        `无法连接后端 ${API_BASE}。请确认服务已重启。`,
+        "NETWORK_ERROR",
+        0,
+        []
+      );
+    }
+    if (!response.ok) {
+      const contentType = response.headers.get("Content-Type") || "";
+      const body = contentType.includes("application/json")
+        ? await response.json()
+        : null;
+      const apiError = body && body.error;
+      throw new ApiError(
+        (apiError && apiError.message) || `二维码生成失败（HTTP ${response.status}）`,
+        (apiError && apiError.code) || "HTTP_ERROR",
+        response.status,
+        (apiError && apiError.details) || []
+      );
+    }
+    const blob = await response.blob();
+    if (blob.type !== "image/png") {
+      throw new ApiError(
+        "后端未返回有效的 PNG 二维码。",
+        "INVALID_QR_RESPONSE",
+        response.status,
+        []
+      );
+    }
+    setConnection("connected", "已连接");
+    return blob;
+  }
+
+  async function generatePoiQrCode() {
+    if (!state.qrPoi || state.qrBusy) {
+      return;
+    }
+    if (!isActivePublished() || !state.qrPoi.enabled) {
+      showToast("仅当前启用版本中的有效 POI 可生成二维码。", true);
+      return;
+    }
+
+    let navigationUrl;
+    try {
+      navigationUrl = updateQrNavigationUrl();
+    } catch (error) {
+      showToast(error.message, true);
+      return;
+    }
+    releaseQrObjectUrl();
+    showQrPlaceholder("正在生成二维码");
+    setQrBusy(true);
+    try {
+      state.qrBlob = await requestQrCode(navigationUrl);
+      state.qrObjectUrl = URL.createObjectURL(state.qrBlob);
+      elements.qrImage.src = state.qrObjectUrl;
+      elements.qrImage.hidden = false;
+      elements.qrPlaceholder.hidden = true;
+    } catch (error) {
+      showQrPlaceholder("二维码生成失败");
+      handleError(error);
+    } finally {
+      setQrBusy(false);
+    }
+  }
+
+  function openPoiQrDialog(poi) {
+    if (!isActivePublished() || !poi.enabled) {
+      showToast("请切换到当前启用版本中的有效 POI。", true);
+      return;
+    }
+    state.qrPoi = poi;
+    elements.qrPoiName.textContent = poi.name;
+    elements.qrPoiMeta.textContent =
+      `${floorCode(poi.floorId)} · ${poi.code}`;
+    elements.qrBaseUrlInput.value = defaultNavigationBaseUrl();
+    releaseQrObjectUrl();
+    showQrPlaceholder("正在生成二维码");
+    updateQrNavigationUrl();
+    setQrBusy(false);
+    elements.poiQrDialog.showModal();
+    void generatePoiQrCode();
+  }
+
+  async function copyQrNavigationUrl() {
+    const navigationUrl = elements.qrNavigationUrl.value;
+    if (!navigationUrl) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(navigationUrl);
+    } catch (error) {
+      elements.qrNavigationUrl.focus();
+      elements.qrNavigationUrl.select();
+      document.execCommand("copy");
+      elements.qrNavigationUrl.setSelectionRange(0, 0);
+    }
+    showToast("导航地址已复制。");
+  }
+
+  function downloadPoiQrCode() {
+    if (!state.qrObjectUrl || !state.qrPoi) {
+      return;
+    }
+    const safeCode = state.qrPoi.code.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const link = document.createElement("a");
+    link.href = state.qrObjectUrl;
+    link.download = `medroute-${safeCode}.png`;
+    link.click();
+  }
+
   function selectObject(kind, id) {
     const object = objectByKind(kind, id);
     if (!object) {
@@ -1883,6 +2130,19 @@
       (release) => release.id === state.workspace.release.id
     );
     return Boolean(summary && !summary.active);
+  }
+
+  function isActivePublished() {
+    if (
+      !state.workspace ||
+      state.workspace.release.status !== "published"
+    ) {
+      return false;
+    }
+    const summary = state.releases.find(
+      (release) => release.id === state.workspace.release.id
+    );
+    return Boolean(summary && summary.active);
   }
 
   function updatePublishActionsVisibility() {
@@ -2190,6 +2450,22 @@
     );
   }
 
+  function poiQrActionHtml(poi) {
+    const eligible = isActivePublished() && poi.enabled;
+    const status = !poi.enabled
+      ? "该 POI 未启用，不能作为现场固定起点。"
+      : isActivePublished()
+        ? `固定点编码：${poi.code}`
+        : "仅当前启用的发布版本可生成现场二维码。";
+    return (
+      `<div class="poi-publication-action">` +
+      `<button class="button secondary full-width" id="generatePoiQrButton"` +
+      ` type="button"${eligible ? "" : " disabled"}>` +
+      `生成固定点二维码</button>` +
+      `<span class="read-only-value">${escapeHtml(status)}</span></div>`
+    );
+  }
+
   function connectorStopsHtml(stops) {
     if (!stops.length) {
       return '<span class="read-only-value">尚未标注停靠点</span>';
@@ -2492,6 +2768,29 @@
       event.preventDefault();
       discardDraft();
     });
+    elements.generateQrButton.addEventListener(
+      "click",
+      generatePoiQrCode
+    );
+    elements.copyQrUrlButton.addEventListener(
+      "click",
+      copyQrNavigationUrl
+    );
+    elements.downloadQrButton.addEventListener(
+      "click",
+      downloadPoiQrCode
+    );
+    elements.qrBaseUrlInput.addEventListener("input", () => {
+      releaseQrObjectUrl();
+      showQrPlaceholder("地址已修改，请重新生成");
+      try {
+        updateQrNavigationUrl();
+      } catch (error) {
+        elements.qrNavigationUrl.value = "";
+      }
+      setQrBusy(false);
+    });
+    elements.poiQrDialog.addEventListener("close", releaseQrObjectUrl);
     elements.closureForm.addEventListener(
       "submit",
       createOperationClosure
@@ -2526,6 +2825,7 @@
         event.preventDefault();
       }
     });
+    window.addEventListener("pagehide", releaseQrObjectUrl);
   }
 
   setupEvents();

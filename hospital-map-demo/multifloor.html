@@ -9,8 +9,8 @@
     >
     <title>MedRoute 医院室内导航</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="./multifloor.css?v=20260726-1">
-    <script defer src="./multifloor.js?v=20260726-1"></script>
+    <link rel="stylesheet" href="./multifloor.css?v=20260726-3">
+    <script defer src="./multifloor.js?v=20260726-3"></script>
   </head>
   <body>
     <div class="app-shell" data-page-state="loading">
@@ -44,8 +44,25 @@
               <div class="endpoint-field">
                 <span class="endpoint-mark is-start" aria-hidden="true">起</span>
                 <div class="field-group">
-                  <label for="start-poi">起点</label>
-                  <select id="start-poi" name="startPoiId" disabled></select>
+                  <label for="start-poi-trigger">起点</label>
+                  <button
+                    id="start-poi-trigger"
+                    class="poi-trigger"
+                    type="button"
+                    aria-haspopup="dialog"
+                    disabled
+                  >
+                    <span id="start-poi-value">正在加载地点</span>
+                    <span aria-hidden="true">›</span>
+                  </button>
+                  <select
+                    id="start-poi"
+                    class="endpoint-select"
+                    name="startPoiId"
+                    aria-hidden="true"
+                    tabindex="-1"
+                    disabled
+                  ></select>
                 </div>
               </div>
 
@@ -63,8 +80,25 @@
               <div class="endpoint-field">
                 <span class="endpoint-mark is-end" aria-hidden="true">终</span>
                 <div class="field-group">
-                  <label for="end-poi">终点</label>
-                  <select id="end-poi" name="endPoiId" disabled></select>
+                  <label for="end-poi-trigger">终点</label>
+                  <button
+                    id="end-poi-trigger"
+                    class="poi-trigger"
+                    type="button"
+                    aria-haspopup="dialog"
+                    disabled
+                  >
+                    <span id="end-poi-value">正在加载地点</span>
+                    <span aria-hidden="true">›</span>
+                  </button>
+                  <select
+                    id="end-poi"
+                    class="endpoint-select"
+                    name="endPoiId"
+                    aria-hidden="true"
+                    tabindex="-1"
+                    disabled
+                  ></select>
                 </div>
               </div>
             </div>
@@ -177,5 +211,54 @@
         </section>
       </main>
     </div>
+
+    <dialog
+      id="poi-search-dialog"
+      class="poi-search-dialog"
+      aria-labelledby="poi-search-title"
+    >
+      <div class="poi-search-sheet">
+        <header class="poi-search-header">
+          <div>
+            <p id="poi-search-endpoint">选择起点</p>
+            <h2 id="poi-search-title">选择院内地点</h2>
+          </div>
+          <button
+            id="close-poi-search"
+            class="dialog-close"
+            type="button"
+            aria-label="关闭地点搜索"
+            title="关闭"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        </header>
+
+        <div class="poi-search-controls">
+          <label class="poi-search-field">
+            <span class="sr-only">搜索地点</span>
+            <input
+              id="poi-search-input"
+              type="search"
+              inputmode="search"
+              autocomplete="off"
+              placeholder="搜索科室、地点或关键词"
+            >
+          </label>
+          <div
+            id="poi-floor-filters"
+            class="poi-floor-filters"
+            role="tablist"
+            aria-label="按楼层筛选"
+          ></div>
+        </div>
+
+        <p id="poi-search-count" class="poi-search-count" aria-live="polite"></p>
+        <ul id="poi-search-results" class="poi-search-results"></ul>
+        <p id="poi-search-empty" class="poi-search-empty" hidden>
+          没有找到匹配地点
+        </p>
+      </div>
+    </dialog>
   </body>
 </html>
