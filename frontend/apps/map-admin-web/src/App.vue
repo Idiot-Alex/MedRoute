@@ -15,10 +15,16 @@ import {
 } from "@medroute/api-client/demo";
 import {
   DEFAULT_BUILDING_ID,
+  clampPixel,
   rescaleFloorCoordinates,
   canPublishRelease,
   canRollbackRelease,
+  graphDependencies,
   graphForFloor,
+  parsePoiKeywords,
+  rebindEdgeEndpoint,
+  rebindPoiToNode,
+  removeBasicGraphObject,
   selectionForValidationIssue,
   stopsForConnector,
   validateConnectorRelations,
@@ -31,6 +37,7 @@ import {
   type ConnectorIssue,
   type ConnectorStop,
   type EditorTool,
+  type GraphDependency,
   type MapSelection,
   type MapImageDimensions,
   type NavigationPoi,
@@ -56,7 +63,6 @@ import {
   MapPin,
   MousePointer2,
   RefreshCw,
-  QrCode,
   Save,
   Server,
   TriangleAlert,
@@ -71,6 +77,7 @@ import {
 import ConnectorValidation from "./components/ConnectorValidation.vue";
 import CrossFloorInspector from "./components/CrossFloorInspector.vue";
 import CrossFloorPanel from "./components/CrossFloorPanel.vue";
+import DeleteGraphObjectDialog from "./components/DeleteGraphObjectDialog.vue";
 import FloorMapEditor from "./components/FloorMapEditor.vue";
 import MapReplacementDialog from "./components/MapReplacementDialog.vue";
 import PublicationWorkbench from "./components/PublicationWorkbench.vue";
@@ -81,6 +88,10 @@ import RouteRegressionDialog from "./components/RouteRegressionDialog.vue";
 
 const OperationsWorkbench = defineAsyncComponent(
   () => import("./components/OperationsWorkbench.vue"),
+);
+
+const BasicGraphInspector = defineAsyncComponent(
+  () => import("./components/BasicGraphInspector.vue"),
 );
 
 const params = new URLSearchParams(window.location.search);
@@ -126,6 +137,9 @@ const mapReplacementDialog = ref<
   InstanceType<typeof MapReplacementDialog> | null
 >(null);
 const qrCodeDialog = ref<InstanceType<typeof QrCodeDialog> | null>(null);
+const deleteGraphObjectDialog = ref<
+  InstanceType<typeof DeleteGraphObjectDialog> | null
+>(null);
 const connectorDraft = reactive({
   name: "",
   code: "",
@@ -149,6 +163,10 @@ const tools = [
   { id: "edge" as const, label: "路径", icon: GitBranch },
   { id: "poi" as const, label: "POI", icon: MapPin },
 ];
+
+interface DeleteObjectDependency extends Omit<GraphDependency, "kind"> {
+  kind: GraphDependency["kind"] | "route_regression_case";
+}
 
 const activeFloor = computed(
   () =>
@@ -255,6 +273,19 @@ const selectedPoi = computed<Poi | null>(() => {
   }
   return (selectedObject(workspace.value.graph, selection.value) as Poi) ?? null;
 });
+
+const basicSelection = computed<MapSelection | null>(() =>
+  selection.value &&
+  ["node", "edge", "poi"].includes(selection.value.kind)
+    ? selection.value
+    : null,
+);
+
+const selectedGraphDependencies = computed<GraphDependency[]>(() =>
+  workspace.value && basicSelection.value
+    ? graphDependencies(workspace.value.graph, basicSelection.value)
+    : [],
+);
 
 const selectedPoiAllowsQrCode = computed(
   () =>
@@ -606,6 +637,106 @@ function moveSelectedNode(
   if (moveNode(workspace.value.graph, activeFloor.value, nodeId, coordinate)) {
     changed();
   }
+}
+
+function updateSelectedNodeCoordinate(
+  axis: "x" | "y",
+  value: number,
+): void {
+  if (!workspace.value || !selectedNode.value || !editable.value) {
+    return;
+  }
+  const floor = workspace.value.floors.find(
+    (item) => item.id === selectedNode.value?.floorId,
+  );
+  if (!floor) {
+    return;
+  }
+  const coordinate: PixelCoordinate = [
+    selectedNode.value.x,
+    selectedNode.value.y,
+  ];
+  coordinate[axis === "x" ? 0 : 1] = value;
+  if (moveNode(workspace.value.graph, floor, selectedNode.value.id, coordinate)) {
+    changed();
+  }
+}
+
+function updateSelectedPoiCoordinate(
+  axis: "x" | "y",
+  value: number,
+): void {
+  if (!workspace.value || !selectedPoi.value || !editable.value) {
+    return;
+  }
+  const floor = workspace.value.floors.find(
+    (item) => item.id === selectedPoi.value?.floorId,
+  );
+  if (!floor) {
+    return;
+  }
+  const coordinate: PixelCoordinate = [
+    selectedPoi.value.x,
+    selectedPoi.value.y,
+  ];
+  coordinate[axis === "x" ? 0 : 1] = value;
+  const [x, y] = clampPixel(
+    coordinate,
+    floor.mapRevision.imageWidth,
+    floor.mapRevision.imageHeight,
+  ).map((item) => Math.round(item * 10) / 10) as PixelCoordinate;
+  if (x === selectedPoi.value.x && y === selectedPoi.value.y) {
+    return;
+  }
+  selectedPoi.value.x = x;
+  selectedPoi.value.y = y;
+  changed();
+}
+
+function changeSelectedPoiNode(nodeId: string): void {
+  if (!workspace.value || !selectedPoi.value || !editable.value) {
+    return;
+  }
+  if (
+    !rebindPoiToNode(
+      workspace.value.graph,
+      selectedPoi.value.id,
+      nodeId,
+    )
+  ) {
+    showToast("POI 只能绑定同一楼层的路径节点");
+    return;
+  }
+  changed("POI 到达节点已更新");
+}
+
+function changeSelectedEdgeEndpoint(
+  endpoint: "from" | "to",
+  nodeId: string,
+): void {
+  if (!workspace.value || !selectedEdge.value || !editable.value) {
+    return;
+  }
+  if (
+    !rebindEdgeEndpoint(
+      workspace.value.graph,
+      selectedEdge.value.id,
+      endpoint,
+      nodeId,
+    )
+  ) {
+    showToast("端点必须同层、互不相同，且不能形成重复路径");
+    return;
+  }
+  changed("路径端点已更新");
+}
+
+function updateSelectedPoiKeywords(value: string): void {
+  if (!selectedPoi.value || !editable.value) {
+    return;
+  }
+  selectedPoi.value.keywords = parsePoiKeywords(value);
+  changed("POI 搜索词已更新");
 }
 
 function chooseEdgeNode(nodeId: string): void {
@@ -1003,6 +1134,148 @@ function deleteRelation(): void {
   }
   selection.value = null;
   changed("跨层配置已删除");
+}
+
+function dependenciesForBasicObject(
+  current: MapSelection,
+): DeleteObjectDependency[] {
+  if (!workspace.value) {
+    return [];
+  }
+  const dependencies: DeleteObjectDependency[] = [
+    ...graphDependencies(workspace.value.graph, current),
+  ];
+  if (current.kind !== "poi") {
+    return dependencies;
+  }
+  const poi = workspace.value.graph.pois.find(
+    (item) => item.id === current.id,
+  );
+  if (!poi) {
+    return dependencies;
+  }
+  dependencies.push(
+    ...regressionCases.value
+      .filter(
+        (item) =>
+          item.enabled &&
+          (item.startPoiCode === poi.code || item.endPoiCode === poi.code),
+      )
+      .map((item) => {
+        const usedAsStart = item.startPoiCode === poi.code;
+        const usedAsEnd = item.endPoiCode === poi.code;
+        return {
+          kind: "route_regression_case" as const,
+          id: item.id,
+          label: item.name,
+          relation:
+            usedAsStart && usedAsEnd
+              ? "关键路线起点和目的地"
+              : usedAsStart
+                ? "关键路线起点"
+                : "关键路线目的地",
+        };
+      }),
+  );
+  return dependencies;
+}
+
+function openBasicObjectDelete(): void {
+  if (
+    !workspace.value ||
+    !basicSelection.value ||
+    !editable.value
+  ) {
+    return;
+  }
+  const current = basicSelection.value;
+  const object = selectedObject(workspace.value.graph, current);
+  if (!object) {
+    return;
+  }
+  const objectType = {
+    node: "节点",
+    edge: "路径",
+    poi: "POI",
+  }[current.kind as "node" | "edge" | "poi"];
+  const objectName =
+    current.kind === "poi" && "name" in object
+      ? `${object.name}（${object.code}）`
+      : object.code;
+  deleteGraphObjectDialog.value?.open(
+    current,
+    objectType,
+    objectName,
+    dependenciesForBasicObject(current),
+  );
+}
+
+function confirmBasicObjectDelete(current: MapSelection): void {
+  if (!workspace.value || !editable.value) {
+    return;
+  }
+  const dependencies = dependenciesForBasicObject(current);
+  if (dependencies.length) {
+    showToast("引用关系已变化，请先处理所有引用");
+    const object = selectedObject(workspace.value.graph, current);
+    if (object) {
+      const objectType = {
+        node: "节点",
+        edge: "路径",
+        poi: "POI",
+      }[current.kind as "node" | "edge" | "poi"];
+      const objectName =
+        current.kind === "poi" && "name" in object
+          ? `${object.name}（${object.code}）`
+          : object.code;
+      deleteGraphObjectDialog.value?.open(
+        current,
+        objectType,
+        objectName,
+        dependencies,
+      );
+    }
+    return;
+  }
+  if (!removeBasicGraphObject(workspace.value.graph, current)) {
+    showToast("对象不存在或仍有引用，删除未执行");
+    return;
+  }
+  deleteGraphObjectDialog.value?.close();
+  selection.value = null;
+  changed("图元素已从草稿删除");
+}
+
+function navigateObjectDependency(
+  kind: DeleteObjectDependency["kind"],
+  id: string,
+): void {
+  if (kind === "route_regression_case") {
+    rightTab.value = "publication";
+    openRegressionCase(id);
+    return;
+  }
+  if (!workspace.value) {
+    return;
+  }
+  const nextSelection: MapSelection = { kind, id };
+  const object = selectedObject(workspace.value.graph, nextSelection);
+  if (!object) {
+    showToast("当前草稿中找不到该引用对象");
+    return;
+  }
+  let floorId = "floorId" in object ? String(object.floorId) : null;
+  if (kind === "link") {
+    const fromStop = workspace.value.graph.connectorStops.find(
+      (item) => item.id === (object as VerticalLink).fromStopId,
+    );
+    floorId = fromStop?.floorId ?? null;
+  }
+  if (floorId && floorId !== activeFloorId.value) {
+    changeFloor(floorId);
+  }
+  select(nextSelection);
+  rightTab.value = "properties";
 }
 
 function navigateIssue(issue: ConnectorIssue): void {
@@ -2142,171 +2415,23 @@ onMounted(load);
               @delete-selection="deleteRelation"
             />
 
-            <form
-              v-else-if="selectedNode"
-          class="space-y-4"
-          @change="updateSelected"
-          @submit.prevent
-        >
-          <label class="block space-y-1.5">
-            <span class="text-xs font-medium text-[#344054]">节点编号</span>
-            <input
-              v-model="selectedNode.code"
-              class="h-9 w-full rounded-md border border-[#cfd5dc] px-2.5 text-xs outline-none focus:border-[#087f8c] focus:ring-2 focus:ring-[#b9dfe0]"
-              :disabled="!editable"
+            <BasicGraphInspector
+              v-else-if="basicSelection"
+              :graph="workspace.graph"
+              :selection="basicSelection"
+              :editable="editable"
+              :dependencies="selectedGraphDependencies"
+              :qr-code-allowed="selectedPoiAllowsQrCode"
+              @changed="updateSelected"
+              @move-node="updateSelectedNodeCoordinate"
+              @move-poi="updateSelectedPoiCoordinate"
+              @rebind-edge="changeSelectedEdgeEndpoint"
+              @rebind-poi="changeSelectedPoiNode"
+              @update-keywords="updateSelectedPoiKeywords"
+              @delete-selection="openBasicObjectDelete"
+              @navigate-dependency="navigateObjectDependency"
+              @open-qr-code="openSelectedPoiQrCode"
             />
-          </label>
-          <label class="block space-y-1.5">
-            <span class="text-xs font-medium text-[#344054]">节点类型</span>
-            <select
-              v-model="selectedNode.type"
-              class="h-9 w-full rounded-md border border-[#cfd5dc] bg-white px-2.5 text-xs outline-none focus:border-[#087f8c]"
-              :disabled="!editable"
-            >
-              <option value="normal">普通节点</option>
-              <option value="decision">路口节点</option>
-              <option value="poi_access">POI 到达节点</option>
-              <option value="connector_stop">跨层停靠节点</option>
-            </select>
-          </label>
-          <div class="grid grid-cols-2 gap-2">
-            <label class="block space-y-1.5">
-              <span class="text-xs font-medium text-[#344054]">X 坐标</span>
-              <input
-                :value="selectedNode.x"
-                class="h-9 w-full rounded-md border border-[#d7dce2] bg-[#f3f5f7] px-2.5 text-xs"
-                readonly
-              />
-            </label>
-            <label class="block space-y-1.5">
-              <span class="text-xs font-medium text-[#344054]">Y 坐标</span>
-              <input
-                :value="selectedNode.y"
-                class="h-9 w-full rounded-md border border-[#d7dce2] bg-[#f3f5f7] px-2.5 text-xs"
-                readonly
-              />
-            </label>
-          </div>
-          <label class="flex items-center gap-2 text-xs text-[#344054]">
-            <input
-              v-model="selectedNode.enabled"
-              type="checkbox"
-              :disabled="!editable"
-              class="size-4 accent-[#087f8c]"
-            />
-            节点启用
-          </label>
-        </form>
-
-        <form
-          v-else-if="selectedEdge"
-          class="space-y-4"
-          @change="updateSelected"
-          @submit.prevent
-        >
-          <label class="block space-y-1.5">
-            <span class="text-xs font-medium text-[#344054]">路径编号</span>
-            <input
-              v-model="selectedEdge.code"
-              class="h-9 w-full rounded-md border border-[#cfd5dc] px-2.5 text-xs outline-none focus:border-[#087f8c]"
-              :disabled="!editable"
-            />
-          </label>
-          <div class="grid grid-cols-2 gap-2">
-            <label class="block space-y-1.5">
-              <span class="text-xs font-medium text-[#344054]">距离（米）</span>
-              <input
-                v-model.number="selectedEdge.distanceMeters"
-                type="number"
-                min="0"
-                step="0.1"
-                class="h-9 w-full rounded-md border border-[#cfd5dc] px-2.5 text-xs outline-none focus:border-[#087f8c]"
-                :disabled="!editable"
-              />
-            </label>
-            <label class="block space-y-1.5">
-              <span class="text-xs font-medium text-[#344054]">耗时（秒）</span>
-              <input
-                v-model.number="selectedEdge.timeSeconds"
-                type="number"
-                min="1"
-                class="h-9 w-full rounded-md border border-[#cfd5dc] px-2.5 text-xs outline-none focus:border-[#087f8c]"
-                :disabled="!editable"
-              />
-            </label>
-          </div>
-          <label class="block space-y-1.5">
-            <span class="text-xs font-medium text-[#344054]">通行方向</span>
-            <select
-              v-model="selectedEdge.direction"
-              class="h-9 w-full rounded-md border border-[#cfd5dc] bg-white px-2.5 text-xs"
-              :disabled="!editable"
-            >
-              <option value="both">双向</option>
-              <option value="forward">仅起点到终点</option>
-            </select>
-          </label>
-          <label class="flex items-center gap-2 text-xs text-[#344054]">
-            <input
-              v-model="selectedEdge.accessible"
-              type="checkbox"
-              :disabled="!editable"
-              class="size-4 accent-[#087f8c]"
-            />
-            无障碍可通行
-          </label>
-        </form>
-
-        <form
-          v-else-if="selectedPoi"
-          class="space-y-4"
-          @change="updateSelected"
-          @submit.prevent
-        >
-          <label class="block space-y-1.5">
-            <span class="text-xs font-medium text-[#344054]">POI 名称</span>
-            <input
-              v-model="selectedPoi.name"
-              class="h-9 w-full rounded-md border border-[#cfd5dc] px-2.5 text-xs outline-none focus:border-[#087f8c]"
-              :disabled="!editable"
-            />
-          </label>
-          <label class="block space-y-1.5">
-            <span class="text-xs font-medium text-[#344054]">分类</span>
-            <select
-              v-model="selectedPoi.category"
-              class="h-9 w-full rounded-md border border-[#cfd5dc] bg-white px-2.5 text-xs"
-              :disabled="!editable"
-            >
-              <option value="department">科室</option>
-              <option value="entrance">入口</option>
-              <option value="pharmacy">药房</option>
-              <option value="laboratory">检验检查</option>
-              <option value="service">服务设施</option>
-            </select>
-          </label>
-          <p class="rounded-md bg-[#f3f5f7] p-2.5 text-[11px] leading-4 text-[#667085]">
-            已绑定节点 {{ selectedPoi.nodeId }}
-          </p>
-          <div class="border-t border-[#e4e7eb] pt-4">
-            <button
-              class="flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-[#b9dfe0] text-xs font-semibold text-[#066d77] hover:bg-[#e3f3f3] active:translate-y-px disabled:cursor-not-allowed disabled:border-[#d7dce2] disabled:text-[#98a2b3] disabled:opacity-70"
-              type="button"
-              :disabled="!selectedPoiAllowsQrCode"
-              @click="openSelectedPoiQrCode"
-            >
-              <QrCode :size="15" />
-              生成固定点二维码
-            </button>
-            <p class="mt-2 text-[10px] leading-4 text-[#667085]">
-              {{
-                selectedPoiAllowsQrCode
-                  ? "扫码后会以此 POI 作为导航起点。"
-                  : "请切换到当前启用发布版本中的有效 POI。"
-              }}
-            </p>
-          </div>
-        </form>
 
             <div
               v-else
@@ -2434,6 +2559,12 @@ onMounted(load);
       :building-id="buildingId"
       :default-navigation-base-url="defaultNavigationBaseUrl"
       @copied="showToast('导航地址已复制')"
+    />
+
+    <DeleteGraphObjectDialog
+      ref="deleteGraphObjectDialog"
+      @confirm="confirmBasicObjectDelete"
+      @navigate="navigateObjectDependency"
     />
 
     <dialog

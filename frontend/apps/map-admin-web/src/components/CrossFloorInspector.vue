@@ -125,9 +125,11 @@ function chooseLink(link: VerticalLink): void {
 }
 
 function handleNodeChange(event: Event): void {
-  const nodeId = (event.target as HTMLSelectElement).value;
+  const select = event.target as HTMLSelectElement;
+  const nodeId = select.value;
   if (selectedStop.value && nodeId) {
     emit("rebindStop", selectedStop.value.id, nodeId);
+    select.value = selectedStop.value.nodeId;
   }
 }
 </script>
@@ -245,7 +247,7 @@ function handleNodeChange(event: Event): void {
           :value="selectedStop.nodeId"
           class="h-9 w-full rounded-md border border-[#cfd5dc] bg-white px-2 text-xs"
           :disabled="!editable"
-          @change="handleNodeChange"
+          @change.stop="handleNodeChange"
         >
           <option
             v-for="node in stopNodes"
