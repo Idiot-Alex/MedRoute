@@ -1,0 +1,73 @@
+@import "tailwindcss";
+@import "ol/ol.css";
+
+:root {
+  color: #172033;
+  background: #edf1f3;
+  font-family:
+    "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.route-map {
+  width: 100%;
+  height: 100%;
+  background: #f4f6f8;
+}
+
+.route-map .ol-viewport,
+.route-map canvas,
+.route-map img {
+  max-width: none;
+}
+
+.route-map .ol-control {
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 1px 4px rgba(23, 32, 51, 0.18);
+}
+
+.route-map .ol-control button {
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  border-radius: 4px;
+  color: #172033;
+  background: transparent;
+  font-size: 19px;
+}
+
+.route-map .ol-control button:hover,
+.route-map .ol-control button:focus {
+  color: white;
+  background: #087f8c;
+}
+
+@media (min-width: 1024px) {
+  body {
+    background: #dfe5e8;
+  }
+}

@@ -1,6 +1,10 @@
 # Maven build output
 **/target/
 
+# Frontend dependencies and build output
+**/node_modules/
+**/dist/
+
 # Local IDE metadata and environment overrides
 **/.idea/
 *.iml

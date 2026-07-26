@@ -1,0 +1,76 @@
+@import "tailwindcss";
+@import "ol/ol.css";
+
+:root {
+  color: #172033;
+  background: #eef1f4;
+  font-family:
+    "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-width: 1024px;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.floor-map {
+  width: 100%;
+  height: 100%;
+  background:
+    linear-gradient(#e7eaee 1px, transparent 1px),
+    linear-gradient(90deg, #e7eaee 1px, transparent 1px),
+    #f4f6f8;
+  background-size: 24px 24px;
+}
+
+.floor-map .ol-viewport,
+.floor-map canvas,
+.floor-map img {
+  max-width: none;
+}
+
+.floor-map .ol-viewport {
+  cursor: inherit;
+}
+
+.floor-map .ol-control {
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 1px 3px rgba(23, 32, 51, 0.16);
+}
+
+.floor-map .ol-control button {
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  border-radius: 4px;
+  color: #172033;
+  background: transparent;
+  font-size: 18px;
+}
+
+.floor-map .ol-control button:hover,
+.floor-map .ol-control button:focus {
+  color: white;
+  background: #087f8c;
+}

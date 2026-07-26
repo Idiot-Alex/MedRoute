@@ -1,0 +1,16 @@
+{
+  "name": "medroute-frontend",
+  "private": true,
+  "packageManager": "pnpm@10.22.0",
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "dev:admin": "pnpm --filter @medroute/map-admin-web dev",
+    "dev:navigation": "pnpm --filter @medroute/navigation-web dev",
+    "test": "pnpm --filter @medroute/map-core test",
+    "typecheck": "pnpm -r --if-present typecheck"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
