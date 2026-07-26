@@ -695,6 +695,16 @@ textarea:disabled {
   pointer-events: none;
 }
 
+#poiLayer.dense .poi-marker text {
+  opacity: 0;
+}
+
+#poiLayer.dense .poi-marker:hover text,
+#poiLayer.dense .poi-marker.selected text,
+#poiLayer.dense .poi-marker:focus-within text {
+  opacity: 1;
+}
+
 .stop-marker {
   fill: none;
   stroke: var(--warning);

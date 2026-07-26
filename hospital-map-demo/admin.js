@@ -468,6 +468,7 @@
     const stops = graph.connectorStops.filter(
       (stop) => stop.floorId === floor.id
     );
+    elements.poiLayer.classList.toggle("dense", pois.length > 6);
 
     for (const edge of edges) {
       const from = nodeMap.get(edge.fromNodeId);
@@ -559,12 +560,17 @@
       marker.setAttribute("role", "button");
       marker.setAttribute("tabindex", "0");
       marker.setAttribute("aria-label", `POI ${poi.name}`);
+      const labelOnLeft = poi.x > map.imageWidth * 0.72;
+      const labelBelow = poi.y < 45;
       const label = svgElement("text", {
-        x: poi.x + 18,
-        y: poi.y - 15
+        x: poi.x + (labelOnLeft ? -18 : 18),
+        y: poi.y + (labelBelow ? 30 : -15),
+        "text-anchor": labelOnLeft ? "end" : "start"
       });
       label.textContent = poi.name;
-      group.append(marker, label);
+      const title = svgElement("title", {});
+      title.textContent = poi.name;
+      group.append(title, marker, label);
       group.addEventListener("click", (event) => {
         event.stopPropagation();
         selectObject("poi", poi.id);

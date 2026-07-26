@@ -58,7 +58,7 @@ class RouteRegressionControllerIntegrationTest {
                 )
             )
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.items.length()").value(4));
+            .andExpect(jsonPath("$.items.length()").value(12));
 
         AdminWorkspaceResponse draft = draft("DRAFT-REGRESSION-RUN-");
         MvcResult result = mockMvc.perform(
