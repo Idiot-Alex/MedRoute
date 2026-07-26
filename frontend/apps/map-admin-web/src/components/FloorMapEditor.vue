@@ -42,6 +42,7 @@ const emit = defineEmits<{
   select: [selection: MapSelection | null];
   addNode: [coordinate: PixelCoordinate];
   addPoi: [nodeId: string];
+  addStop: [nodeId: string];
   chooseEdgeNode: [nodeId: string];
   moveNode: [nodeId: string, coordinate: PixelCoordinate];
 }>();
@@ -148,6 +149,7 @@ function refresh(): void {
       node: "crosshair",
       edge: "crosshair",
       poi: "copy",
+      stop: "copy",
     }[props.tool];
   }
 }
@@ -208,7 +210,11 @@ function handleMapClick(event: MapBrowserEvent): void {
     );
     return;
   }
-  if (props.tool === "edge" || props.tool === "poi") {
+  if (
+    props.tool === "edge" ||
+    props.tool === "poi" ||
+    props.tool === "stop"
+  ) {
     const feature = nodeFeatureAt(event);
     const nodeId = String(feature?.get("objectId") ?? "");
     if (!nodeId) {
@@ -216,8 +222,10 @@ function handleMapClick(event: MapBrowserEvent): void {
     }
     if (props.tool === "edge") {
       emit("chooseEdgeNode", nodeId);
-    } else {
+    } else if (props.tool === "poi") {
       emit("addPoi", nodeId);
+    } else {
+      emit("addStop", nodeId);
     }
     return;
   }

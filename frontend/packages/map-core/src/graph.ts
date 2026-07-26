@@ -1,4 +1,5 @@
 import type {
+  Connector,
   ConnectorStop,
   DraftGraph,
   Floor,
@@ -6,6 +7,7 @@ import type {
   PathEdge,
   PathNode,
   Poi,
+  VerticalLink,
 } from "./types";
 import { clampPixel, type PixelCoordinate } from "./coordinates";
 
@@ -71,7 +73,7 @@ export function moveNode(
 export function selectedObject(
   graph: DraftGraph,
   selection: MapSelection | null,
-): PathNode | PathEdge | Poi | ConnectorStop | null {
+): PathNode | PathEdge | Poi | Connector | ConnectorStop | VerticalLink | null {
   if (!selection) {
     return null;
   }
@@ -80,9 +82,15 @@ export function selectedObject(
     edge: "edges",
     poi: "pois",
     stop: "connectorStops",
+    connector: "connectors",
+    link: "verticalLinks",
   }[selection.kind] as keyof DraftGraph;
   return (
-    (graph[property] as Array<PathNode | PathEdge | Poi | ConnectorStop>).find(
+    (
+      graph[property] as Array<
+        PathNode | PathEdge | Poi | Connector | ConnectorStop | VerticalLink
+      >
+    ).find(
       (item) => item.id === selection.id,
     ) ?? null
   );

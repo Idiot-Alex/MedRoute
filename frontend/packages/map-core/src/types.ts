@@ -234,10 +234,11 @@ export interface NavigationRoute {
   warnings: unknown[];
 }
 
-export type EditorTool = "select" | "node" | "edge" | "poi";
+export type EditorTool = "select" | "node" | "edge" | "poi" | "stop";
 export type FeatureKind = "node" | "edge" | "poi" | "stop";
+export type SelectionKind = FeatureKind | "connector" | "link";
 
 export interface MapSelection {
-  kind: FeatureKind;
+  kind: SelectionKind;
   id: string;
 }

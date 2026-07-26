@@ -26,6 +26,10 @@ body {
   overflow: hidden;
 }
 
+dialog::backdrop {
+  background: rgba(23, 32, 51, 0.38);
+}
+
 button,
 input,
 select,
