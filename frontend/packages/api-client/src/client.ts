@@ -176,6 +176,31 @@ export class MedRouteApiClient {
     };
   }
 
+  async replaceFloorMap(
+    releaseId: string,
+    floorId: string,
+    etag: string,
+    file: File,
+  ): Promise<WorkspaceResult> {
+    const formData = new FormData();
+    formData.append("file", file, file.name);
+    const { body, response } = await this.request<AdminWorkspace>(
+      `/api/admin/releases/${releaseId}/floors/${floorId}/map`,
+      {
+        admin: true,
+        method: "POST",
+        headers: { "If-Match": etag },
+        body: formData,
+      },
+    );
+    return {
+      workspace: body,
+      etag:
+        response.headers.get("ETag") ??
+        String(body.release.contentRevision),
+    };
+  }
+
   async publishRelease(
     releaseId: string,
     etag: string,
@@ -295,7 +320,10 @@ export class MedRouteApiClient {
     if (admin) {
       headers.set("X-Admin-User", "local-admin");
     }
-    if (options.body && !headers.has("Content-Type")) {
+    if (
+      typeof options.body === "string" &&
+      !headers.has("Content-Type")
+    ) {
       headers.set("Content-Type", "application/json");
     }
     let response: Response;

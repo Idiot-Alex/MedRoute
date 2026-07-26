@@ -13,6 +13,7 @@ import {
 } from "@medroute/api-client/demo";
 import {
   DEFAULT_BUILDING_ID,
+  rescaleFloorCoordinates,
   canPublishRelease,
   canRollbackRelease,
   graphForFloor,
@@ -29,6 +30,7 @@ import {
   type ConnectorStop,
   type EditorTool,
   type MapSelection,
+  type MapImageDimensions,
   type PathEdge,
   type PathNode,
   type PixelCoordinate,
@@ -43,6 +45,7 @@ import {
   CirclePlus,
   Cloud,
   GitBranch,
+  ImageUp,
   LocateFixed,
   MapPin,
   MousePointer2,
@@ -56,6 +59,7 @@ import ConnectorValidation from "./components/ConnectorValidation.vue";
 import CrossFloorInspector from "./components/CrossFloorInspector.vue";
 import CrossFloorPanel from "./components/CrossFloorPanel.vue";
 import FloorMapEditor from "./components/FloorMapEditor.vue";
+import MapReplacementDialog from "./components/MapReplacementDialog.vue";
 import PublicationWorkbench from "./components/PublicationWorkbench.vue";
 import ReleaseDialogs from "./components/ReleaseDialogs.vue";
 import ReleasePanel from "./components/ReleasePanel.vue";
@@ -91,11 +95,15 @@ const renderRevision = ref(0);
 const demoMode = ref(params.get("demo") === "1");
 const demoInitialized = ref(false);
 const demoWorkspaces = new Map<string, AdminWorkspace>();
+const demoMapObjectUrls = new Set<string>();
 const connectorDialog = ref<HTMLDialogElement | null>(null);
 const linkDialog = ref<HTMLDialogElement | null>(null);
 const releaseDialogs = ref<InstanceType<typeof ReleaseDialogs> | null>(null);
 const regressionDialog = ref<
   InstanceType<typeof RouteRegressionDialog> | null
+>(null);
+const mapReplacementDialog = ref<
+  InstanceType<typeof MapReplacementDialog> | null
 >(null);
 const connectorDraft = reactive({
   name: "",
@@ -248,6 +256,28 @@ function cloneWorkspace(source: AdminWorkspace): AdminWorkspace {
   return JSON.parse(JSON.stringify(source)) as AdminWorkspace;
 }
 
+function pruneDemoMapObjectUrls(): void {
+  const referenced = new Set(
+    [...demoWorkspaces.values()].flatMap((item) =>
+      item.floors.map((floor) => floor.mapRevision.imageUrl),
+    ),
+  );
+  for (const url of demoMapObjectUrls) {
+    if (referenced.has(url)) {
+      continue;
+    }
+    URL.revokeObjectURL(url);
+    demoMapObjectUrls.delete(url);
+  }
+}
+
+function clearDemoMapObjectUrls(): void {
+  for (const url of demoMapObjectUrls) {
+    URL.revokeObjectURL(url);
+  }
+  demoMapObjectUrls.clear();
+}
+
 function preferredRelease(
   preferredReleaseId?: string,
 ): ReleaseListItem | null {
@@ -327,6 +357,7 @@ async function load(preferredReleaseId?: string): Promise<void> {
 }
 
 function useDemo(): void {
+  clearDemoMapObjectUrls();
   demoMode.value = true;
   demoInitialized.value = false;
   releases.value = [];
@@ -906,6 +937,97 @@ function updateCurrentReleaseSummary(
   }
 }
 
+function openMapReplacementDialog(): void {
+  if (!workspace.value || workspace.value.release.status !== "draft") {
+    return;
+  }
+  if (dirty.value) {
+    showToast("请先保存当前草稿修改，再替换底图");
+    return;
+  }
+  mapReplacementDialog.value?.open();
+}
+
+async function replaceFloorMap(
+  file: File,
+  dimensions: MapImageDimensions,
+): Promise<void> {
+  if (
+    !workspace.value ||
+    !activeFloor.value ||
+    workspace.value.release.status !== "draft" ||
+    dirty.value
+  ) {
+    return;
+  }
+  const floorId = activeFloor.value.id;
+  const currentDimensions = {
+    width: activeFloor.value.mapRevision.imageWidth,
+    height: activeFloor.value.mapRevision.imageHeight,
+  };
+  busy.value = true;
+  try {
+    if (demoMode.value) {
+      rescaleFloorCoordinates(
+        workspace.value.graph,
+        floorId,
+        currentDimensions,
+        dimensions,
+      );
+      const imageUrl = URL.createObjectURL(file);
+      demoMapObjectUrls.add(imageUrl);
+      const revisionNo = activeFloor.value.mapRevision.revisionNo + 1;
+      activeFloor.value.mapRevision = {
+        id: crypto.randomUUID(),
+        revisionNo,
+        imageUrl,
+        imageWidth: dimensions.width,
+        imageHeight: dimensions.height,
+      };
+      workspace.value.release.contentRevision += 1;
+      etag.value = String(workspace.value.release.contentRevision);
+      invalidateReleaseValidation();
+      updateCurrentReleaseSummary({
+        contentRevision: workspace.value.release.contentRevision,
+        validationPassed: null,
+        validatedRevision: null,
+      });
+      demoWorkspaces.set(
+        workspace.value.release.id,
+        cloneWorkspace(workspace.value),
+      );
+      pruneDemoMapObjectUrls();
+      selection.value = null;
+      renderRevision.value += 1;
+      mapReplacementDialog.value?.close();
+      showToast(
+        `${activeFloor.value.code} 底图已替换为修订 ${revisionNo}，请核对本层标注`,
+      );
+      return;
+    }
+    const result = await client.replaceFloorMap(
+      workspace.value.release.id,
+      floorId,
+      etag.value,
+      file,
+    );
+    applyWorkspace(result.workspace, result.etag);
+    updateCurrentReleaseSummary({
+      contentRevision: result.workspace.release.contentRevision,
+      validationPassed: null,
+      validatedRevision: null,
+    });
+    mapReplacementDialog.value?.close();
+    showToast(`${activeFloor.value?.code ?? "楼层"}底图已替换，请核对标注`);
+  } catch (caught) {
+    showToast(
+      caught instanceof ApiError ? caught.message : "楼层底图替换失败。",
+    );
+  } finally {
+    busy.value = false;
+  }
+}
+
 function openCreateDraftDialog(): void {
   releaseDialogs.value?.openDraft();
 }
@@ -1036,6 +1158,7 @@ async function discardDraft(): Promise<void> {
         cloneWorkspace(nextWorkspace),
         String(nextWorkspace.release.contentRevision),
       );
+      pruneDemoMapObjectUrls();
     } else {
       const result = await client.loadWorkspace(nextRelease.id);
       applyWorkspace(result.workspace, result.etag);
@@ -1571,9 +1694,20 @@ onMounted(load);
               {{ activeFloor.mapRevision.imageHeight }} px
             </p>
           </div>
-          <div class="flex items-center gap-1.5 text-[11px] text-[#667085]">
-            <LocateFixed :size="14" />
-            左上角像素坐标
+          <div class="flex items-center gap-2">
+            <button
+              class="flex h-8 items-center gap-1.5 rounded-md border border-[#cfd5dc] bg-white px-2.5 text-[11px] font-semibold text-[#344054] hover:bg-[#f3f5f7] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"
+              type="button"
+              :disabled="workspace.release.status !== 'draft' || busy"
+              @click="openMapReplacementDialog"
+            >
+              <ImageUp :size="14" />
+              替换底图
+            </button>
+            <span class="flex items-center gap-1.5 text-[11px] text-[#667085]">
+              <LocateFixed :size="14" />
+              左上角像素坐标
+            </span>
           </div>
         </div>
         <div class="relative min-h-0 overflow-hidden">
@@ -1946,6 +2080,17 @@ onMounted(load);
       :graph="workspace.graph"
       :floors="workspace.floors"
       @save="saveRegressionCase"
+    />
+
+    <MapReplacementDialog
+      v-if="workspace && activeFloor"
+      ref="mapReplacementDialog"
+      :floor="activeFloor"
+      :current-image-url="imageUrl"
+      :node-count="currentGraph?.nodes.length ?? 0"
+      :poi-count="currentGraph?.pois.length ?? 0"
+      :busy="busy"
+      @replace="replaceFloorMap"
     />
 
     <dialog
