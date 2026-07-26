@@ -7,6 +7,8 @@ import {
 } from "@medroute/api-client";
 import {
   demoAdminWorkspace,
+  demoNavigationPois,
+  demoOperationClosures,
   demoReleaseList,
   demoRouteRegressionCases,
   demoValidation,
@@ -31,6 +33,9 @@ import {
   type EditorTool,
   type MapSelection,
   type MapImageDimensions,
+  type NavigationPoi,
+  type OperationClosureListResponse,
+  type OperationTargetType,
   type PathEdge,
   type PathNode,
   type PixelCoordinate,
@@ -38,6 +43,7 @@ import {
   type ReleaseListItem,
   type RouteRegressionCase,
   type RouteRegressionCasePayload,
+  type CreateOperationClosurePayload,
   type ValidationIssue,
   type VerticalLink,
 } from "@medroute/map-core";
@@ -50,20 +56,32 @@ import {
   MapPin,
   MousePointer2,
   RefreshCw,
+  QrCode,
   Save,
   Server,
   TriangleAlert,
 } from "@lucide/vue";
-import { computed, onMounted, reactive, ref } from "vue";
+import {
+  computed,
+  defineAsyncComponent,
+  onMounted,
+  reactive,
+  ref,
+} from "vue";
 import ConnectorValidation from "./components/ConnectorValidation.vue";
 import CrossFloorInspector from "./components/CrossFloorInspector.vue";
 import CrossFloorPanel from "./components/CrossFloorPanel.vue";
 import FloorMapEditor from "./components/FloorMapEditor.vue";
 import MapReplacementDialog from "./components/MapReplacementDialog.vue";
 import PublicationWorkbench from "./components/PublicationWorkbench.vue";
+import QrCodeDialog from "./components/QrCodeDialog.vue";
 import ReleaseDialogs from "./components/ReleaseDialogs.vue";
 import ReleasePanel from "./components/ReleasePanel.vue";
 import RouteRegressionDialog from "./components/RouteRegressionDialog.vue";
+
+const OperationsWorkbench = defineAsyncComponent(
+  () => import("./components/OperationsWorkbench.vue"),
+);
 
 const params = new URLSearchParams(window.location.search);
 const apiBase = (params.get("api") ?? "http://127.0.0.1:8080").replace(
@@ -77,6 +95,8 @@ const client = new MedRouteApiClient({ apiBase });
 const workspace = ref<AdminWorkspace | null>(null);
 const releases = ref<ReleaseListItem[]>([]);
 const regressionCases = ref<RouteRegressionCase[]>([]);
+const operations = ref<OperationClosureListResponse | null>(null);
+const publishedPois = ref<NavigationPoi[]>([]);
 const releaseValidation = ref<AdminValidation | null>(null);
 const etag = ref("");
 const activeFloorId = ref("");
@@ -84,9 +104,9 @@ const tool = ref<EditorTool>("select");
 const selection = ref<MapSelection | null>(null);
 const edgeStartId = ref<string | null>(null);
 const activeConnectorId = ref<string | null>(null);
-const rightTab = ref<"properties" | "relations" | "publication">(
-  "properties",
-);
+const rightTab = ref<
+  "properties" | "relations" | "publication" | "operations"
+>("properties");
 const dirty = ref(false);
 const busy = ref(false);
 const error = ref("");
@@ -105,6 +125,7 @@ const regressionDialog = ref<
 const mapReplacementDialog = ref<
   InstanceType<typeof MapReplacementDialog> | null
 >(null);
+const qrCodeDialog = ref<InstanceType<typeof QrCodeDialog> | null>(null);
 const connectorDraft = reactive({
   name: "",
   code: "",
@@ -177,6 +198,13 @@ const publicationIssueCount = computed(() => {
   );
 });
 
+const activePublishedRelease = computed(
+  () =>
+    releases.value.find(
+      (release) => release.status === "published" && release.active,
+    ) ?? null,
+);
+
 const relationSelection = computed<MapSelection | null>(() =>
   selection.value &&
   ["connector", "stop", "link"].includes(selection.value.kind)
@@ -228,6 +256,15 @@ const selectedPoi = computed<Poi | null>(() => {
   return (selectedObject(workspace.value.graph, selection.value) as Poi) ?? null;
 });
 
+const selectedPoiAllowsQrCode = computed(
+  () =>
+    Boolean(
+      selectedPoi.value?.enabled &&
+        workspace.value &&
+        workspace.value.release.id === activePublishedRelease.value?.id,
+    ),
+);
+
 const imageUrl = computed(() =>
   activeFloor.value
     ? resolveMapImageUrl(
@@ -238,6 +275,26 @@ const imageUrl = computed(() =>
     : "",
 );
 
+function resolveDefaultNavigationBaseUrl(): string {
+  const configured = params.get("navigation");
+  if (configured) {
+    return configured;
+  }
+  const navigationUrl = new URL("/", window.location.origin);
+  if (
+    ["127.0.0.1", "localhost", "::1", "[::1]"].includes(
+      navigationUrl.hostname.toLocaleLowerCase(),
+    ) &&
+    navigationUrl.port === "5173"
+  ) {
+    navigationUrl.port = "5174";
+  }
+  navigationUrl.searchParams.set("api", apiBase);
+  return navigationUrl.toString();
+}
+
+const defaultNavigationBaseUrl = resolveDefaultNavigationBaseUrl();
+
 function initializeDemoSession(): void {
   if (demoInitialized.value) {
     return;
@@ -245,6 +302,8 @@ function initializeDemoSession(): void {
   const fixture = demoReleaseList();
   releases.value = fixture.items;
   regressionCases.value = demoRouteRegressionCases();
+  operations.value = demoOperationClosures();
+  publishedPois.value = demoNavigationPois();
   demoWorkspaces.clear();
   for (const release of releases.value) {
     demoWorkspaces.set(release.id, demoAdminWorkspace(release.id));
@@ -254,6 +313,24 @@ function initializeDemoSession(): void {
 
 function cloneWorkspace(source: AdminWorkspace): AdminWorkspace {
   return JSON.parse(JSON.stringify(source)) as AdminWorkspace;
+}
+
+function syncDemoOperations(source: AdminWorkspace): void {
+  const nextOperations = demoOperationClosures(
+    source.release.id,
+    source.release.code,
+    source,
+  );
+  const validTargetKeys = new Set(
+    nextOperations.targets.map(
+      (target) => `${target.targetType}:${target.id}`,
+    ),
+  );
+  nextOperations.items = (operations.value?.items ?? []).filter((item) =>
+    validTargetKeys.has(`${item.targetType}:${item.targetId}`),
+  );
+  operations.value = nextOperations;
+  publishedPois.value = demoNavigationPois(source);
 }
 
 function pruneDemoMapObjectUrls(): void {
@@ -321,12 +398,28 @@ async function load(preferredReleaseId?: string): Promise<void> {
     if (demoMode.value) {
       initializeDemoSession();
     } else {
-      const [releaseList, regressionList] = await Promise.all([
+      const [
+        releaseList,
+        regressionList,
+        operationList,
+        navigationPoiList,
+      ] = await Promise.all([
         client.listReleases(buildingId),
         client.listRouteRegressionCases(buildingId),
+        client.operationClosures(buildingId),
+        client.navigationPois(buildingId),
       ]);
+      if (navigationPoiList.releaseId !== operationList.releaseId) {
+        throw new ApiError(
+          "运营状态和发布 POI 来自不同地图版本，请重新加载。",
+          409,
+          "ACTIVE_RELEASE_CHANGED",
+        );
+      }
       releases.value = releaseList.items;
       regressionCases.value = regressionList.items;
+      operations.value = operationList;
+      publishedPois.value = navigationPoiList.items;
     }
     const release = preferredRelease(preferredReleaseId);
     if (!release) {
@@ -362,6 +455,8 @@ function useDemo(): void {
   demoInitialized.value = false;
   releases.value = [];
   regressionCases.value = [];
+  operations.value = null;
+  publishedPois.value = [];
   demoWorkspaces.clear();
   void load();
 }
@@ -1355,6 +1450,7 @@ async function publishDraft(reason: string): Promise<void> {
         validatedRevision: workspace.value.release.contentRevision,
       });
       demoWorkspaces.set(releaseId, cloneWorkspace(workspace.value));
+      syncDemoOperations(workspace.value);
       releaseDialogs.value?.closePublish();
       rightTab.value = "publication";
       showToast(`版本 ${workspace.value.release.code} 已在演示会话中发布`);
@@ -1397,6 +1493,7 @@ async function rollbackRelease(reason: string): Promise<void> {
       )) {
         item.active = item.id === releaseId;
       }
+      syncDemoOperations(workspace.value);
       releaseDialogs.value?.closeRollback();
       rightTab.value = "publication";
       showToast(`已在演示会话中回滚启用 ${workspace.value.release.code}`);
@@ -1413,6 +1510,190 @@ async function rollbackRelease(reason: string): Promise<void> {
   } finally {
     busy.value = false;
   }
+}
+
+async function refreshOperations(showSuccess = true): Promise<void> {
+  busy.value = true;
+  try {
+    if (!demoMode.value) {
+      const [operationList, navigationPoiList] = await Promise.all([
+        client.operationClosures(buildingId),
+        client.navigationPois(buildingId),
+      ]);
+      if (navigationPoiList.releaseId !== operationList.releaseId) {
+        throw new ApiError(
+          "当前发布版本正在切换，请稍后重试。",
+          409,
+          "ACTIVE_RELEASE_CHANGED",
+        );
+      }
+      operations.value = operationList;
+      publishedPois.value = navigationPoiList.items;
+    }
+    if (showSuccess) {
+      showToast("运营状态已刷新");
+    }
+  } catch (caught) {
+    showToast(
+      caught instanceof ApiError ? caught.message : "运营状态刷新失败。",
+    );
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function createOperationClosure(
+  payload: CreateOperationClosurePayload,
+): Promise<void> {
+  busy.value = true;
+  try {
+    if (demoMode.value) {
+      if (!operations.value) {
+        throw new ApiError(
+          "运营状态尚未加载。",
+          409,
+          "OPERATIONS_NOT_READY",
+        );
+      }
+      const target = operations.value.targets.find(
+        (item) =>
+          item.targetType === payload.targetType &&
+          item.id === payload.targetId,
+      );
+      if (!target) {
+        throw new ApiError(
+          "封闭对象不属于当前启用版本。",
+          409,
+          "OPERATION_TARGET_NOT_FOUND",
+        );
+      }
+      const effectiveFrom =
+        payload.effectiveFrom ?? new Date().toISOString();
+      operations.value.items.unshift({
+        id: crypto.randomUUID(),
+        targetType: target.targetType,
+        targetId: target.id,
+        targetCode: target.code,
+        targetName: target.name,
+        effectiveFrom,
+        effectiveTo: payload.effectiveTo,
+        reason: payload.reason,
+        createdBy: "local-admin",
+        createdAt: effectiveFrom,
+      });
+    } else {
+      operations.value = await client.createOperationClosure(
+        buildingId,
+        payload,
+      );
+    }
+    showToast("运营封闭已生效，新的路线会立即避开该对象");
+  } catch (caught) {
+    showToast(
+      caught instanceof ApiError ? caught.message : "运营封闭创建失败。",
+    );
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function revokeOperationClosure(closureId: string): Promise<void> {
+  const closure = operations.value?.items.find(
+    (item) => item.id === closureId,
+  );
+  if (!closure) {
+    return;
+  }
+  busy.value = true;
+  try {
+    if (demoMode.value) {
+      if (operations.value) {
+        operations.value.items = operations.value.items.filter(
+          (item) => item.id !== closureId,
+        );
+      }
+    } else {
+      operations.value = await client.revokeOperationClosure(closureId);
+    }
+    showToast(`${closure.targetName} 已恢复，新的路线会采用最新状态`);
+  } catch (caught) {
+    showToast(
+      caught instanceof ApiError ? caught.message : "运营封闭恢复失败。",
+    );
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function navigateOperationTarget(
+  targetType: OperationTargetType,
+  targetId: string,
+): Promise<void> {
+  if (!workspace.value || !operations.value) {
+    return;
+  }
+  if (workspace.value.release.id !== operations.value.releaseId) {
+    await switchRelease(operations.value.releaseId);
+    if (workspace.value?.release.id !== operations.value.releaseId) {
+      showToast("请先切换到当前启用版本再定位运营对象");
+      return;
+    }
+  }
+
+  let nextSelection: MapSelection | null = null;
+  let floorId: string | null = null;
+  if (targetType === "path_edge") {
+    const edge = workspace.value.graph.edges.find(
+      (item) => item.id === targetId,
+    );
+    nextSelection = edge ? { kind: "edge", id: edge.id } : null;
+    floorId = edge?.floorId ?? null;
+  } else if (targetType === "vertical_connector") {
+    const connector = workspace.value.graph.connectors.find(
+      (item) => item.id === targetId,
+    );
+    nextSelection = connector
+      ? { kind: "connector", id: connector.id }
+      : null;
+  } else {
+    const link = workspace.value.graph.verticalLinks.find(
+      (item) => item.id === targetId,
+    );
+    const fromStop = workspace.value.graph.connectorStops.find(
+      (item) => item.id === link?.fromStopId,
+    );
+    nextSelection = link ? { kind: "link", id: link.id } : null;
+    floorId = fromStop?.floorId ?? null;
+  }
+
+  if (!nextSelection) {
+    showToast("当前版本中找不到该运营对象");
+    return;
+  }
+  if (floorId && floorId !== activeFloorId.value) {
+    changeFloor(floorId);
+  }
+  select(nextSelection);
+  rightTab.value = "properties";
+}
+
+function openSelectedPoiQrCode(): void {
+  if (
+    !workspace.value ||
+    !selectedPoi.value ||
+    !selectedPoiAllowsQrCode.value
+  ) {
+    showToast("仅当前启用版本中的有效 POI 可生成二维码");
+    return;
+  }
+  const floor = workspace.value.floors.find(
+    (item) => item.id === selectedPoi.value?.floorId,
+  );
+  qrCodeDialog.value?.open(selectedPoi.value, floor?.code ?? "?");
+}
+
+function openPublishedPoiQrCode(poi: NavigationPoi): void {
+  qrCodeDialog.value?.open(poi, poi.floorCode);
 }
 
 function navigateValidationIssue(issue: ValidationIssue): void {
@@ -1736,11 +2017,11 @@ onMounted(load);
       </section>
 
       <aside
-        class="min-h-0 overflow-y-auto border-l border-[#d7dce2] bg-white"
-        aria-label="元素属性、跨层关系和发布工作台"
+        class="grid min-h-0 grid-rows-[44px_minmax(0,1fr)] border-l border-[#d7dce2] bg-white"
+        aria-label="元素属性、跨层关系、发布和运营工作台"
       >
         <div
-          class="grid h-11 grid-cols-3 border-b border-[#d7dce2] bg-[#f8fafb] px-2"
+          class="grid h-11 grid-cols-4 border-b border-[#d7dce2] bg-[#f8fafb] px-2"
           role="tablist"
           aria-label="右侧面板"
         >
@@ -1810,9 +2091,33 @@ onMounted(load);
               class="absolute inset-x-3 bottom-0 h-0.5 bg-[#087f8c]"
             ></span>
           </button>
+          <button
+            class="relative flex items-center justify-center gap-1 text-xs font-semibold"
+            :class="
+              rightTab === 'operations'
+                ? 'text-[#066d77]'
+                : 'text-[#667085]'
+            "
+            type="button"
+            role="tab"
+            :aria-selected="rightTab === 'operations'"
+            @click="rightTab = 'operations'"
+          >
+            运营
+            <span
+              v-if="operations?.items.length"
+              class="grid min-w-4 place-items-center rounded-sm bg-[#fee2e2] px-1 text-[10px] leading-4 text-[#b91c1c]"
+            >
+              {{ operations.items.length }}
+            </span>
+            <span
+              v-if="rightTab === 'operations'"
+              class="absolute inset-x-3 bottom-0 h-0.5 bg-[#087f8c]"
+            ></span>
+          </button>
         </div>
 
-        <div class="p-4">
+        <div class="min-h-0 overflow-y-auto p-4">
           <template v-if="rightTab === 'properties'">
             <div class="mb-4 flex items-center justify-between">
               <h2 class="text-sm font-semibold">属性</h2>
@@ -1983,6 +2288,24 @@ onMounted(load);
           <p class="rounded-md bg-[#f3f5f7] p-2.5 text-[11px] leading-4 text-[#667085]">
             已绑定节点 {{ selectedPoi.nodeId }}
           </p>
+          <div class="border-t border-[#e4e7eb] pt-4">
+            <button
+              class="flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-[#b9dfe0] text-xs font-semibold text-[#066d77] hover:bg-[#e3f3f3] active:translate-y-px disabled:cursor-not-allowed disabled:border-[#d7dce2] disabled:text-[#98a2b3] disabled:opacity-70"
+              type="button"
+              :disabled="!selectedPoiAllowsQrCode"
+              @click="openSelectedPoiQrCode"
+            >
+              <QrCode :size="15" />
+              生成固定点二维码
+            </button>
+            <p class="mt-2 text-[10px] leading-4 text-[#667085]">
+              {{
+                selectedPoiAllowsQrCode
+                  ? "扫码后会以此 POI 作为导航起点。"
+                  : "请切换到当前启用发布版本中的有效 POI。"
+              }}
+            </p>
+          </div>
         </form>
 
             <div
@@ -2007,7 +2330,7 @@ onMounted(load);
           />
 
           <PublicationWorkbench
-            v-else
+            v-else-if="rightTab === 'publication'"
             :release="workspace.release"
             :releases="releases"
             :validation="releaseValidation"
@@ -2021,6 +2344,18 @@ onMounted(load);
             @edit-case="openRegressionCase"
             @delete-case="deleteRegressionCase"
             @navigate-issue="navigateValidationIssue"
+          />
+
+          <OperationsWorkbench
+            v-else
+            :operations="operations"
+            :pois="publishedPois"
+            :busy="busy"
+            @create="createOperationClosure"
+            @revoke="revokeOperationClosure"
+            @refresh="refreshOperations"
+            @navigate="navigateOperationTarget"
+            @qr-code="openPublishedPoiQrCode"
           />
         </div>
       </aside>
@@ -2091,6 +2426,14 @@ onMounted(load);
       :poi-count="currentGraph?.pois.length ?? 0"
       :busy="busy"
       @replace="replaceFloorMap"
+    />
+
+    <QrCodeDialog
+      ref="qrCodeDialog"
+      :api-base="apiBase"
+      :building-id="buildingId"
+      :default-navigation-base-url="defaultNavigationBaseUrl"
+      @copied="showToast('导航地址已复制')"
     />
 
     <dialog

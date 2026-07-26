@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildFixedPointNavigationUrl,
   filterNavigationPois,
   findNavigationPoiByReference,
   navigationCategoryLabel,
+  navigationUrlUsesLoopback,
   normalizeNavigationSearch,
 } from "./navigation";
 import type { NavigationPoi } from "./types";
@@ -94,6 +96,43 @@ describe("navigation POI helpers", () => {
     expect(navigationCategoryLabel("department")).toBe("科室");
     expect(navigationCategoryLabel("custom")).toBe("custom");
     expect(navigationCategoryLabel("")).toBe("地点");
+  });
+
+  it("builds fixed-point URLs with stable parameters", () => {
+    const result = new URL(
+      buildFixedPointNavigationUrl(
+        "https://nav.example.com/?api=https://api.example.com&buildingId=old&start=id&endPoi=P-LAB",
+        "building-1",
+        "P-ENTRANCE",
+      ),
+    );
+
+    expect(result.searchParams.get("api")).toBe(
+      "https://api.example.com",
+    );
+    expect(result.searchParams.get("building")).toBe("building-1");
+    expect(result.searchParams.get("startPoi")).toBe("P-ENTRANCE");
+    expect(result.searchParams.has("buildingId")).toBe(false);
+    expect(result.searchParams.has("start")).toBe(false);
+    expect(result.searchParams.has("endPoi")).toBe(false);
+  });
+
+  it("rejects invalid QR destinations and detects local-only links", () => {
+    expect(() =>
+      buildFixedPointNavigationUrl(
+        "file:///tmp/navigation.html",
+        "building-1",
+        "P-ENTRANCE",
+      ),
+    ).toThrow("HTTP");
+    expect(
+      navigationUrlUsesLoopback(
+        "https://nav.example.com/?api=http://127.0.0.1:8080",
+      ),
+    ).toBe(true);
+    expect(
+      navigationUrlUsesLoopback("https://nav.example.com/"),
+    ).toBe(false);
   });
 });
 

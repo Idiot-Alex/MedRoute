@@ -8,6 +8,8 @@ import type {
   NavigationContext,
   NavigationPoi,
   NavigationRoute,
+  OperationClosureListResponse,
+  OperationTarget,
   PathEdge,
   PathNode,
   Poi,
@@ -255,6 +257,71 @@ export function demoRouteRegressionCases(): RouteRegressionCase[] {
   return structuredClone(regressionCases);
 }
 
+export function demoOperationClosures(
+  releaseId = id("5000"),
+  releaseCode = "REL-DEMO-OPENLAYERS",
+  source?: Pick<AdminWorkspace, "floors" | "graph">,
+): OperationClosureListResponse {
+  const operationGraph = source?.graph ?? graph;
+  const operationFloors = source?.floors ?? floors;
+  const targets: OperationTarget[] = [
+    ...operationGraph.edges
+      .filter((item) => item.enabled)
+      .map((item) => ({
+        targetType: "path_edge" as const,
+        id: item.id,
+        code: item.code,
+        name: item.code,
+        floorCode:
+          operationFloors.find((floor) => floor.id === item.floorId)?.code ??
+          null,
+      })),
+    ...operationGraph.connectors
+      .filter((item) => item.enabled)
+      .map((item) => ({
+        targetType: "vertical_connector" as const,
+        id: item.id,
+        code: item.code,
+        name: item.name,
+        floorCode: null,
+      })),
+    ...operationGraph.verticalLinks
+      .filter((item) => item.enabled)
+      .map((item) => {
+        const fromStop = operationGraph.connectorStops.find(
+          (stopItem) => stopItem.id === item.fromStopId,
+        );
+        const toStop = operationGraph.connectorStops.find(
+          (stopItem) => stopItem.id === item.toStopId,
+        );
+        const fromFloor = operationFloors.find(
+          (floor) => floor.id === fromStop?.floorId,
+        );
+        const toFloor = operationFloors.find(
+          (floor) => floor.id === toStop?.floorId,
+        );
+        const linkConnector = operationGraph.connectors.find(
+          (connectorItem) => connectorItem.id === item.connectorId,
+        );
+        const floorCode = `${fromFloor?.code ?? "?"} ↔ ${toFloor?.code ?? "?"}`;
+        return {
+          targetType: "vertical_link" as const,
+          id: item.id,
+          code: item.code,
+          name: `${linkConnector?.name ?? item.code} ${floorCode}`,
+          floorCode,
+        };
+      }),
+  ];
+  return structuredClone({
+    buildingId: building.id,
+    releaseId,
+    releaseCode,
+    targets,
+    items: [],
+  });
+}
+
 export function demoAdminWorkspace(releaseId = id("5001")): AdminWorkspace {
   const summary =
     releaseItems.find((item) => item.id === releaseId) ?? releaseItems[0]!;
@@ -415,19 +482,27 @@ function demoRegressionResult(
   };
 }
 
-export function demoNavigationPois(): NavigationPoi[] {
-  return pois.map((item) => ({
-    id: item.id,
-    code: item.code,
-    name: item.name,
-    category: item.category,
-    floorId: item.floorId,
-    floorCode: floors.find((floor) => floor.id === item.floorId)?.code ?? "?",
-    x: item.x,
-    y: item.y,
-    accessible: item.accessible,
-    searchKeywords: item.keywords,
-  }));
+export function demoNavigationPois(
+  source?: Pick<AdminWorkspace, "floors" | "graph">,
+): NavigationPoi[] {
+  const navigationFloors = source?.floors ?? floors;
+  const navigationPois = source?.graph.pois ?? pois;
+  return navigationPois
+    .filter((item) => item.enabled && item.accessScope === "public")
+    .map((item) => ({
+      id: item.id,
+      code: item.code,
+      name: item.name,
+      category: item.category,
+      floorId: item.floorId,
+      floorCode:
+        navigationFloors.find((floor) => floor.id === item.floorId)?.code ??
+        "?",
+      x: item.x,
+      y: item.y,
+      accessible: item.accessible,
+      searchKeywords: item.keywords,
+    }));
 }
 
 export function demoRoute(

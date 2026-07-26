@@ -24,6 +24,52 @@ export function navigationCategoryLabel(category: string): string {
   return (categoryLabels[category] ?? category) || "地点";
 }
 
+export function buildFixedPointNavigationUrl(
+  baseUrl: string,
+  buildingId: string,
+  startPoiCode: string,
+): string {
+  let navigationUrl: URL;
+  try {
+    navigationUrl = new URL(baseUrl.trim());
+  } catch {
+    throw new Error("导航页面基础地址无效。");
+  }
+  if (!["http:", "https:"].includes(navigationUrl.protocol)) {
+    throw new Error("导航页面必须使用 HTTP 或 HTTPS 地址。");
+  }
+  for (const parameter of [
+    "building",
+    "buildingId",
+    "start",
+    "startPoi",
+    "startPoiCode",
+    "end",
+    "endPoi",
+    "endPoiCode",
+  ]) {
+    navigationUrl.searchParams.delete(parameter);
+  }
+  navigationUrl.searchParams.set("building", buildingId);
+  navigationUrl.searchParams.set("startPoi", startPoiCode);
+  return navigationUrl.toString();
+}
+
+export function navigationUrlUsesLoopback(value: string): boolean {
+  try {
+    const navigationUrl = new URL(value);
+    if (isLoopbackHostname(navigationUrl.hostname)) {
+      return true;
+    }
+    const apiParameter = navigationUrl.searchParams.get("api");
+    return apiParameter
+      ? isLoopbackHostname(new URL(apiParameter).hostname)
+      : false;
+  } catch {
+    return false;
+  }
+}
+
 export function findNavigationPoiByReference(
   pois: NavigationPoi[],
   reference: string,
@@ -85,6 +131,12 @@ export function filterNavigationPois(
       left.name.localeCompare(right.name, "zh-CN", { numeric: true })
     );
   });
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return ["127.0.0.1", "localhost", "::1", "[::1]"].includes(
+    hostname.toLocaleLowerCase(),
+  );
 }
 
 function poiSearchScore(poi: NavigationPoi, terms: string[]): number {

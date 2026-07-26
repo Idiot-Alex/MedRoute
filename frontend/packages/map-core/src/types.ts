@@ -215,6 +215,48 @@ export interface RouteRegressionCasePayload {
   maxEstimatedSeconds: number | null;
 }
 
+export type OperationTargetType =
+  | "path_edge"
+  | "vertical_connector"
+  | "vertical_link";
+
+export interface OperationTarget {
+  targetType: OperationTargetType;
+  id: string;
+  code: string;
+  name: string;
+  floorCode: string | null;
+}
+
+export interface OperationClosure {
+  id: string;
+  targetType: OperationTargetType;
+  targetId: string;
+  targetCode: string;
+  targetName: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  reason: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface OperationClosureListResponse {
+  buildingId: string;
+  releaseId: string;
+  releaseCode: string;
+  targets: OperationTarget[];
+  items: OperationClosure[];
+}
+
+export interface CreateOperationClosurePayload {
+  targetType: OperationTargetType;
+  targetId: string;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  reason: string;
+}
+
 export interface NavigationRelease {
   id: string;
   code: string;

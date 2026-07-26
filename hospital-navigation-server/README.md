@@ -112,6 +112,8 @@ POST   /api/admin/navigation-qr-code
 ./mvnw test
 ```
 
+Surefire 会为二维码图像测试启用 Java headless 模式，测试过程不依赖桌面窗口服务。
+
 测试环境使用 H2 PostgreSQL 兼容模式和同一组通用 Flyway 迁移，覆盖：
 
 - 路线算法、单向边、无障碍过滤和长整型成本。

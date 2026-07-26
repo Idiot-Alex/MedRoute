@@ -5,10 +5,12 @@ import type {
   NavigationContext,
   NavigationPoiSearchResponse,
   NavigationRoute,
+  OperationClosureListResponse,
   ReleaseListResponse,
   RouteRegressionCase,
   RouteRegressionCaseListResponse,
   RouteRegressionCasePayload,
+  CreateOperationClosurePayload,
 } from "@medroute/map-core";
 
 export interface ApiClientOptions {
@@ -283,6 +285,67 @@ export class MedRouteApiClient {
     );
   }
 
+  async operationClosures(
+    buildingId: string,
+  ): Promise<OperationClosureListResponse> {
+    const { body } = await this.request<OperationClosureListResponse>(
+      `/api/admin/buildings/${buildingId}/operations/closures`,
+      { admin: true },
+    );
+    return body;
+  }
+
+  async createOperationClosure(
+    buildingId: string,
+    payload: CreateOperationClosurePayload,
+  ): Promise<OperationClosureListResponse> {
+    const { body } = await this.request<OperationClosureListResponse>(
+      `/api/admin/buildings/${buildingId}/operations/closures`,
+      {
+        admin: true,
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+    return body;
+  }
+
+  async revokeOperationClosure(
+    closureId: string,
+  ): Promise<OperationClosureListResponse> {
+    const { body } = await this.request<OperationClosureListResponse>(
+      `/api/admin/operations/closures/${closureId}`,
+      {
+        admin: true,
+        method: "DELETE",
+      },
+    );
+    return body;
+  }
+
+  async generateNavigationQrCode(navigationUrl: string): Promise<Blob> {
+    const { response } = await this.request<void>(
+      "/api/admin/navigation-qr-code",
+      {
+        method: "POST",
+        headers: { Accept: "image/png" },
+        body: JSON.stringify({ navigationUrl }),
+      },
+    );
+    const blob = await response.blob();
+    if (
+      !response.headers.get("Content-Type")?.includes("image/png") ||
+      blob.type !== "image/png"
+    ) {
+      throw new ApiError(
+        "后端未返回有效的 PNG 二维码。",
+        response.status,
+        "INVALID_QR_RESPONSE",
+      );
+    }
+    return blob;
+  }
+
   async navigationContext(buildingId: string): Promise<NavigationContext> {
     const { body } = await this.request<NavigationContext>(
       `/api/buildings/${buildingId}/navigation-context`,
@@ -315,7 +378,9 @@ export class MedRouteApiClient {
   ): Promise<{ body: T; response: Response }> {
     const { admin, ...requestOptions } = options;
     const headers = new Headers(options.headers);
-    headers.set("Accept", "application/json");
+    if (!headers.has("Accept")) {
+      headers.set("Accept", "application/json");
+    }
     headers.set("X-Request-Id", `web-${crypto.randomUUID()}`);
     if (admin) {
       headers.set("X-Admin-User", "local-admin");
