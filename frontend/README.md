@@ -33,8 +33,13 @@ pnpm dev:admin
 pnpm dev:navigation
 ```
 
-开发服务器默认将同源 `/api` 代理到 `http://127.0.0.1:8080`，因此后端启动后
-直接打开 `5173` 和 `5174` 即可。连接其他后端时可通过查询参数指定：
+只有导航端监听 `0.0.0.0` 并显示 `Network` 地址。同一局域网手机应打开电脑实际
+IP，例如 `http://192.168.5.42:5174/`，不能使用手机自己的 `127.0.0.1`。
+导航端仅代理上下文、POI、路线和底图公开 API；未接入登录前，维护端仍只监听
+`127.0.0.1:5173`，后端默认也只监听本机回环地址。
+
+开发服务器将允许的同源 `/api` 请求代理到 `http://127.0.0.1:8080`，因此后端
+启动后直接打开 `5173` 和 `5174` 即可。连接其他后端时可通过查询参数指定：
 
 ```text
 http://127.0.0.1:5173/?api=http://127.0.0.1:8082
@@ -95,12 +100,24 @@ http://127.0.0.1:5174/?building={buildingId}&startPoi={poiCode}&endPoi={poiCode}
 http://127.0.0.1:5173/?navigation=https://nav.example.com/
 ```
 
+局域网手机验收时，维护端仍从电脑打开，并显式指定手机可访问的导航入口：
+
+```text
+http://127.0.0.1:5173/?navigation=http://192.168.5.42:5174/
+```
+
+也可以直接在二维码窗口修改导航基础地址。不要把尚无身份认证的维护端暴露给
+局域网；正式部署后再使用 HTTPS 域名和受控反向代理。
+
 ## 验证
 
 ```bash
 pnpm test
 pnpm typecheck
 pnpm build
+MEDROUTE_API_BASE=http://192.168.5.42:5174 \
+  MEDROUTE_EXPECTED_POI_COUNT=30 \
+  node ../scripts/pilot-api-smoke.mjs --public-only
 ```
 
 维护端验收 `1200 x 720` 和 `1440 x 900`；导航端验收 `360 x 800`、

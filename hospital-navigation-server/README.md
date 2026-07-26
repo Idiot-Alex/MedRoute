@@ -36,7 +36,9 @@ HTTP: http://127.0.0.1:8080
 ```
 
 连接信息可通过 `MEDROUTE_DB_URL`、`MEDROUTE_DB_USER`、
-`MEDROUTE_DB_PASSWORD` 和 `MEDROUTE_DB_POOL_SIZE` 覆盖。
+`MEDROUTE_DB_PASSWORD` 和 `MEDROUTE_DB_POOL_SIZE` 覆盖。HTTP 默认只绑定
+`127.0.0.1`；只有在已配置身份认证、受控反向代理和防火墙后，才应通过
+`MEDROUTE_SERVER_ADDRESS` 修改监听地址。
 
 ## 运行
 
@@ -131,18 +133,23 @@ Surefire 会为二维码图像测试启用 Java headless 模式，测试过程�
 ```bash
 MEDROUTE_EXPECTED_POI_COUNT=30 node scripts/pilot-api-smoke.mjs
 MEDROUTE_EXPECTED_POI_COUNT=30 node scripts/pilot-api-smoke.mjs --write
+MEDROUTE_API_BASE=http://192.168.5.42:5174 \
+  MEDROUTE_EXPECTED_POI_COUNT=30 \
+  node scripts/pilot-api-smoke.mjs --public-only
 ```
 
 默认模式只读取当前发布版本，检查上下文/POI/运营版本一致性、全部 POI 普通和
 无障碍可达矩阵及二维码 PNG。`--write` 还会自动选择一条当前路线使用的开放
 电梯或楼梯，创建即时封闭，验证绕行或明确不可达，再撤销封闭并确认原基线恢复。
-该模式保留已撤销的运营审计记录，不会修改地图发布版本。
+该模式保留已撤销的运营审计记录，不会修改地图发布版本。`--public-only` 仅调用
+导航公开 API，适合从局域网地址检查手机访问边界，不能与 `--write` 同时使用。
 
 ## 安全边界
 
 当前维护 API 通过 `X-Admin-User` 记录操作人，但尚未接入 Spring Security，
-该请求头不能视为身份认证。当前宽松 CORS 只适合本机或受控内网验收。生产部署前
-必须增加正式登录、角色和楼栋数据范围、HTTPS、反向代理及受控 CORS。
+该请求头不能视为身份认证。因此后端和维护端默认只允许本机访问；局域网手机通过
+导航 Vite 的公开 API 白名单代理进行试点验收。当前宽松 CORS 只适合本机验收。
+生产部署前必须增加正式登录、角色和楼栋数据范围、HTTPS、反向代理及受控 CORS。
 
 正式契约和操作步骤见：
 

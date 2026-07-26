@@ -6,6 +6,7 @@ import {
   navigationCategoryLabel,
   navigationUrlUsesLoopback,
   normalizeNavigationSearch,
+  resolveNavigationBaseUrl,
 } from "./navigation";
 import type { NavigationPoi } from "./types";
 
@@ -133,6 +134,65 @@ describe("navigation POI helpers", () => {
     expect(
       navigationUrlUsesLoopback("https://nav.example.com/"),
     ).toBe(false);
+  });
+
+  it("derives the navigation dev server for loopback and LAN hosts", () => {
+    expect(
+      resolveNavigationBaseUrl({
+        currentOrigin: "http://127.0.0.1:5173",
+        apiBase: "http://127.0.0.1:5173",
+        development: true,
+        apiExplicit: false,
+      }),
+    ).toBe("http://127.0.0.1:5174/");
+    expect(
+      resolveNavigationBaseUrl({
+        currentOrigin: "http://192.168.10.20:5173",
+        apiBase: "http://192.168.10.20:5173",
+        development: true,
+        apiExplicit: false,
+      }),
+    ).toBe("http://192.168.10.20:5174/");
+  });
+
+  it("preserves explicit development APIs and production configuration", () => {
+    expect(
+      resolveNavigationBaseUrl({
+        currentOrigin: "http://192.168.10.20:5173",
+        apiBase: "http://192.168.10.20:8082",
+        development: true,
+        apiExplicit: true,
+      }),
+    ).toBe(
+      "http://192.168.10.20:5174/?api=http%3A%2F%2F192.168.10.20%3A8082",
+    );
+    expect(
+      resolveNavigationBaseUrl({
+        currentOrigin: "https://admin.example.com",
+        apiBase: "https://api.example.com",
+        configuredUrl: " https://nav.example.com/hospital/ ",
+        development: false,
+        apiExplicit: true,
+      }),
+    ).toBe("https://nav.example.com/hospital/");
+    expect(
+      resolveNavigationBaseUrl({
+        currentOrigin: "https://hospital.example.com",
+        apiBase: "https://hospital.example.com",
+        development: false,
+        apiExplicit: false,
+      }),
+    ).toBe("https://hospital.example.com/");
+    expect(
+      resolveNavigationBaseUrl({
+        currentOrigin: "https://admin.example.com",
+        apiBase: "https://api.example.com",
+        development: false,
+        apiExplicit: false,
+      }),
+    ).toBe(
+      "https://admin.example.com/?api=https%3A%2F%2Fapi.example.com",
+    );
   });
 });
 

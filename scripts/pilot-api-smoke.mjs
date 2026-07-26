@@ -2,6 +2,7 @@
 
 const args = new Set(process.argv.slice(2));
 const writeMode = args.has("--write");
+const publicOnly = args.has("--public-only");
 const apiBase = (
   process.env.MEDROUTE_API_BASE ?? "http://127.0.0.1:8080"
 ).replace(/\/$/, "");
@@ -310,25 +311,43 @@ async function verifyReversibleClosure(
 
 async function main() {
   const startedAt = Date.now();
+  assert(
+    !(publicOnly && writeMode),
+    "--public-only cannot be combined with --write",
+  );
   const [context, poiList, releases, operations] = await Promise.all([
     json(`/api/buildings/${buildingId}/navigation-context`),
     json(`/api/buildings/${buildingId}/pois`),
-    json(`/api/admin/buildings/${buildingId}/releases`),
-    json(`/api/admin/buildings/${buildingId}/operations/closures`),
+    publicOnly
+      ? Promise.resolve(null)
+      : json(`/api/admin/buildings/${buildingId}/releases`),
+    publicOnly
+      ? Promise.resolve(null)
+      : json(`/api/admin/buildings/${buildingId}/operations/closures`),
   ]);
 
-  const activeReleases = releases.items.filter(
-    (item) => item.status === "published" && item.active,
-  );
-  assert(activeReleases.length === 1, "Building must have one active release");
   const releaseId = context.release?.id;
   assert(releaseId, "Navigation context has no active release");
-  assert(
-    activeReleases[0].id === releaseId &&
-      poiList.releaseId === releaseId &&
-      operations.releaseId === releaseId,
-    "Context, POIs, operations and release list use different releases",
-  );
+  if (publicOnly) {
+    assert(
+      poiList.releaseId === releaseId,
+      "Context and POIs use different releases",
+    );
+  } else {
+    const activeReleases = releases.items.filter(
+      (item) => item.status === "published" && item.active,
+    );
+    assert(
+      activeReleases.length === 1,
+      "Building must have one active release",
+    );
+    assert(
+      activeReleases[0].id === releaseId &&
+        poiList.releaseId === releaseId &&
+        operations.releaseId === releaseId,
+      "Context, POIs, operations and release list use different releases",
+    );
+  }
   assert(context.floors?.length > 0, "Navigation context has no floors");
   for (const floor of context.floors) {
     assert(
@@ -403,7 +422,11 @@ async function main() {
     );
   }
 
-  await verifyQrCode(startPoi);
+  if (publicOnly) {
+    console.log("[SKIP] admin release, operations and QR checks (public only)");
+  } else {
+    await verifyQrCode(startPoi);
+  }
   if (writeMode) {
     await verifyReversibleClosure(
       operations,

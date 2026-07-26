@@ -55,6 +55,34 @@ export function buildFixedPointNavigationUrl(
   return navigationUrl.toString();
 }
 
+export interface NavigationBaseUrlOptions {
+  currentOrigin: string;
+  apiBase: string;
+  configuredUrl?: string | null;
+  development: boolean;
+  apiExplicit: boolean;
+}
+
+export function resolveNavigationBaseUrl(
+  options: NavigationBaseUrlOptions,
+): string {
+  if (options.configuredUrl?.trim()) {
+    return options.configuredUrl.trim();
+  }
+  const navigationUrl = new URL("/", options.currentOrigin);
+  if (options.development && navigationUrl.port === "5173") {
+    navigationUrl.port = "5174";
+  }
+  const apiOrigin = new URL(options.apiBase, options.currentOrigin).origin;
+  if (
+    options.apiExplicit ||
+    (!options.development && apiOrigin !== navigationUrl.origin)
+  ) {
+    navigationUrl.searchParams.set("api", options.apiBase);
+  }
+  return navigationUrl.toString();
+}
+
 export function navigationUrlUsesLoopback(value: string): boolean {
   try {
     const navigationUrl = new URL(value);

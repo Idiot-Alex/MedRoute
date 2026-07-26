@@ -25,6 +25,7 @@ import {
   rebindEdgeEndpoint,
   rebindPoiToNode,
   removeBasicGraphObject,
+  resolveNavigationBaseUrl,
   selectionForValidationIssue,
   stopsForConnector,
   validateConnectorRelations,
@@ -96,10 +97,7 @@ const BasicGraphInspector = defineAsyncComponent(
 
 const params = new URLSearchParams(window.location.search);
 const apiBase = (
-  params.get("api") ??
-  (import.meta.env.DEV
-    ? window.location.origin
-    : "http://127.0.0.1:8080")
+  params.get("api") ?? window.location.origin
 ).replace(/\/$/, "");
 const buildingId = params.get("building") ?? DEFAULT_BUILDING_ID;
 const assetBase = params.get("assets") ?? window.location.origin;
@@ -309,21 +307,13 @@ const imageUrl = computed(() =>
 );
 
 function resolveDefaultNavigationBaseUrl(): string {
-  const configured = params.get("navigation");
-  if (configured) {
-    return configured;
-  }
-  const navigationUrl = new URL("/", window.location.origin);
-  if (
-    ["127.0.0.1", "localhost", "::1", "[::1]"].includes(
-      navigationUrl.hostname.toLocaleLowerCase(),
-    ) &&
-    navigationUrl.port === "5173"
-  ) {
-    navigationUrl.port = "5174";
-  }
-  navigationUrl.searchParams.set("api", apiBase);
-  return navigationUrl.toString();
+  return resolveNavigationBaseUrl({
+    currentOrigin: window.location.origin,
+    apiBase,
+    configuredUrl: params.get("navigation"),
+    development: import.meta.env.DEV,
+    apiExplicit: params.has("api"),
+  });
 }
 
 const defaultNavigationBaseUrl = resolveDefaultNavigationBaseUrl();
