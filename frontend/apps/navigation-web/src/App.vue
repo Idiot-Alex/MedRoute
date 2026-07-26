@@ -7,26 +7,32 @@ import {
 } from "@medroute/api-client/demo";
 import {
   DEFAULT_BUILDING_ID,
+  findNavigationPoiByReference,
   type NavigationContext,
   type NavigationPoi,
   type NavigationRoute,
+  type RouteStep,
 } from "@medroute/map-core";
 import {
   Accessibility,
   AlertCircle,
   ArrowDownUp,
   Building2,
+  ChevronDown,
   ChevronRight,
   Clock3,
   Footprints,
   LocateFixed,
+  ListStart,
   MapPinned,
   Navigation,
   RefreshCw,
   Route,
 } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
+import PoiSearchDialog from "./components/PoiSearchDialog.vue";
 import RouteFloorMap from "./components/RouteFloorMap.vue";
+import StepNavigator from "./components/StepNavigator.vue";
 
 const params = new URLSearchParams(window.location.search);
 const apiBase = (params.get("api") ?? "http://127.0.0.1:8080").replace(
@@ -34,21 +40,46 @@ const apiBase = (params.get("api") ?? "http://127.0.0.1:8080").replace(
   "",
 );
 const assetBase = params.get("assets") ?? window.location.origin;
-const buildingId = params.get("building") ?? DEFAULT_BUILDING_ID;
+const buildingId =
+  params.get("building") ??
+  params.get("buildingId") ??
+  DEFAULT_BUILDING_ID;
+const requestedStartReference =
+  params.get("startPoi") ??
+  params.get("startPoiCode") ??
+  params.get("start") ??
+  "";
+const requestedEndReference =
+  params.get("endPoi") ??
+  params.get("endPoiCode") ??
+  params.get("end") ??
+  "";
+const requestedRouteMode =
+  params.get("routeMode") ?? params.get("mode") ?? "normal";
 const client = new MedRouteApiClient({ apiBase });
 
 const context = ref<NavigationContext | null>(null);
 const pois = ref<NavigationPoi[]>([]);
 const route = ref<NavigationRoute | null>(null);
-const startPoiId = ref(params.get("start") ?? "");
-const endPoiId = ref(params.get("end") ?? "");
-const routeMode = ref("normal");
+const startPoiId = ref("");
+const endPoiId = ref("");
+const routeMode = ref(
+  ["normal", "accessible"].includes(requestedRouteMode)
+    ? requestedRouteMode
+    : "normal",
+);
 const activeFloorId = ref("");
 const loading = ref(false);
 const routeLoading = ref(false);
 const error = ref("");
 const routeError = ref("");
+const deepLinkNotice = ref("");
 const demoMode = ref(params.get("demo") === "1");
+const stepNavigatorOpen = ref(false);
+const currentStepIndex = ref(0);
+const poiSearchDialog = ref<
+  InstanceType<typeof PoiSearchDialog> | null
+>(null);
 
 const activeFloor = computed(
   () =>
@@ -81,10 +112,20 @@ const routeTime = computed(() => {
   return Math.max(Math.ceil(seconds / 60), 1);
 });
 
+const currentStep = computed<RouteStep | null>(
+  () => route.value?.steps[currentStepIndex.value] ?? null,
+);
+
+const currentStepFloorLabel = computed(() =>
+  floorName(currentStep.value?.floorId ?? null),
+);
+
 async function load(): Promise<void> {
   loading.value = true;
   error.value = "";
   route.value = null;
+  stepNavigatorOpen.value = false;
+  deepLinkNotice.value = "";
   try {
     if (demoMode.value) {
       context.value = demoNavigationContext();
@@ -95,22 +136,79 @@ async function load(): Promise<void> {
         client.navigationPois(buildingId),
       ]);
       context.value = nextContext;
+      if (poiResponse.releaseId !== nextContext.release.id) {
+        throw new ApiError(
+          "医院地图刚刚更新，楼层与地点数据版本不一致，请重新加载。",
+          409,
+          "NAVIGATION_RELEASE_MISMATCH",
+        );
+      }
       pois.value = poiResponse.items;
+    }
+    if (!context.value.floors.length || pois.value.length < 2) {
+      throw new ApiError(
+        "当前发布版本缺少可导航的楼层或地点。",
+        422,
+        "NAVIGATION_DATA_INCOMPLETE",
+      );
     }
     const entrance =
       pois.value.find((poi) => poi.category === "entrance") ?? pois.value[0];
     const destination =
       pois.value.find((poi) => poi.id !== entrance?.id) ?? pois.value[1];
-    if (!pois.value.some((poi) => poi.id === startPoiId.value)) {
-      startPoiId.value = entrance?.id ?? "";
+    const requestedStart = findNavigationPoiByReference(
+      pois.value,
+      requestedStartReference,
+    );
+    const requestedEnd = findNavigationPoiByReference(
+      pois.value,
+      requestedEndReference,
+    );
+    const notices: string[] = [];
+    if (requestedStartReference && !requestedStart) {
+      notices.push("链接中的起点已失效，已改为默认入口");
     }
-    if (!pois.value.some((poi) => poi.id === endPoiId.value)) {
-      endPoiId.value = destination?.id ?? "";
+    if (requestedEndReference && !requestedEnd) {
+      notices.push("链接中的目的地已失效，请重新选择");
     }
+    if (
+      requestedRouteMode &&
+      !["normal", "accessible"].includes(requestedRouteMode)
+    ) {
+      notices.push("链接中的路线偏好不可用，已改为常规路线");
+    }
+    const resolvedStart = requestedStart ?? entrance ?? pois.value[0]!;
+    let resolvedEnd = requestedEnd ?? destination ?? pois.value[1]!;
+    if (resolvedEnd.id === resolvedStart.id) {
+      resolvedEnd =
+        pois.value.find((poi) => poi.id !== resolvedStart.id) ??
+        resolvedEnd;
+      if (requestedEnd) {
+        notices.push("起点和目的地相同，已保留另一个可选地点");
+      }
+    }
+    startPoiId.value = resolvedStart.id;
+    endPoiId.value = resolvedEnd.id;
+    if (
+      !context.value.supportedRouteModes.includes(routeMode.value)
+    ) {
+      routeMode.value = "normal";
+      notices.push("链接中的路线偏好不可用，已改为常规路线");
+    }
+    deepLinkNotice.value = notices.join("；");
     activeFloorId.value =
-      entrance?.floorId ?? context.value.floors[0]?.id ?? "";
-    if (startPoiId.value && endPoiId.value) {
+      resolvedStart.floorId ?? context.value.floors[0]?.id ?? "";
+    if (demoMode.value || requestedEnd) {
       await calculate();
+    } else if (
+      params.has("start") ||
+      params.has("end") ||
+      params.has("startPoiCode") ||
+      params.has("endPoiCode") ||
+      params.has("buildingId") ||
+      params.has("mode")
+    ) {
+      syncNavigationUrl();
     }
   } catch (caught) {
     error.value =
@@ -122,6 +220,9 @@ async function load(): Promise<void> {
 
 function useDemo(): void {
   demoMode.value = true;
+  const url = new URL(window.location.href);
+  url.searchParams.set("demo", "1");
+  window.history.replaceState(null, "", url);
   void load();
 }
 
@@ -148,11 +249,14 @@ async function calculate(): Promise<void> {
           endPoiId: endPoiId.value,
           routeMode: routeMode.value,
         });
+    currentStepIndex.value = 0;
+    stepNavigatorOpen.value = false;
     activeFloorId.value =
       route.value.segments[0]?.floorId ??
       startPoi.value?.floorId ??
       context.value.floors[0]?.id ??
       "";
+    syncNavigationUrl();
   } catch (caught) {
     routeError.value =
       caught instanceof ApiError ? caught.message : "暂时无法计算这条路线。";
@@ -166,7 +270,112 @@ function swapEndpoints(): void {
     endPoiId.value,
     startPoiId.value,
   ];
-  void calculate();
+  route.value = null;
+  routeError.value = "";
+  stepNavigatorOpen.value = false;
+  activeFloorId.value =
+    startPoi.value?.floorId ?? activeFloorId.value;
+  syncNavigationUrl();
+}
+
+function syncNavigationUrl(): void {
+  const url = new URL(window.location.href);
+  for (const key of [
+    "buildingId",
+    "start",
+    "end",
+    "startPoiCode",
+    "endPoiCode",
+    "mode",
+  ]) {
+    url.searchParams.delete(key);
+  }
+  url.searchParams.set("building", buildingId);
+  if (startPoi.value) {
+    url.searchParams.set("startPoi", startPoi.value.code);
+  }
+  if (endPoi.value) {
+    url.searchParams.set("endPoi", endPoi.value.code);
+  }
+  url.searchParams.set("routeMode", routeMode.value);
+  window.history.replaceState(null, "", url);
+}
+
+function openPoiSearch(endpoint: "start" | "end"): void {
+  poiSearchDialog.value?.open(endpoint);
+}
+
+function selectEndpoint(
+  endpoint: "start" | "end",
+  poiId: string,
+): void {
+  if (endpoint === "start") {
+    startPoiId.value = poiId;
+  } else {
+    endPoiId.value = poiId;
+  }
+  route.value = null;
+  routeError.value =
+    startPoiId.value === endPoiId.value
+      ? "起点和终点不能相同。"
+      : "";
+  deepLinkNotice.value = "";
+  stepNavigatorOpen.value = false;
+  const selected = pois.value.find((poi) => poi.id === poiId);
+  if (selected) {
+    activeFloorId.value = selected.floorId;
+  }
+  syncNavigationUrl();
+}
+
+function chooseRouteMode(mode: "normal" | "accessible"): void {
+  if (routeMode.value === mode) {
+    return;
+  }
+  routeMode.value = mode;
+  route.value = null;
+  routeError.value = "";
+  stepNavigatorOpen.value = false;
+  syncNavigationUrl();
+}
+
+function setCurrentStep(index: number): void {
+  if (!route.value?.steps.length) {
+    return;
+  }
+  currentStepIndex.value = Math.min(
+    Math.max(index, 0),
+    route.value.steps.length - 1,
+  );
+  const floorId = route.value.steps[currentStepIndex.value]?.floorId;
+  if (floorId) {
+    activeFloorId.value = floorId;
+  }
+}
+
+function openStepNavigator(index = 0): void {
+  if (!route.value?.steps.length) {
+    return;
+  }
+  setCurrentStep(index);
+  stepNavigatorOpen.value = true;
+}
+
+function moveStep(direction: number): void {
+  if (!route.value) {
+    return;
+  }
+  const nextIndex = currentStepIndex.value + direction;
+  if (nextIndex >= route.value.steps.length) {
+    stepNavigatorOpen.value = false;
+    return;
+  }
+  setCurrentStep(nextIndex);
+}
+
+function viewCurrentStepMap(): void {
+  setCurrentStep(currentStepIndex.value);
+  stepNavigatorOpen.value = false;
 }
 
 function floorName(floorId: string | null): string {
@@ -180,7 +389,7 @@ onMounted(load);
 
 <template>
   <div
-    class="mx-auto grid h-[100dvh] w-full max-w-[1120px] grid-rows-[56px_minmax(0,1fr)] overflow-hidden bg-white text-[#172033] lg:my-4 lg:h-[calc(100dvh-2rem)] lg:border lg:border-[#cad2d8] lg:shadow-[0_12px_30px_rgba(23,32,51,0.12)]"
+    class="relative mx-auto grid h-[100dvh] w-full max-w-[1120px] grid-rows-[56px_minmax(0,1fr)] overflow-hidden bg-white text-[#172033] lg:my-4 lg:h-[calc(100dvh-2rem)] lg:border lg:border-[#cad2d8] lg:shadow-[0_12px_30px_rgba(23,32,51,0.12)]"
   >
     <header
       class="flex items-center justify-between border-b border-[#d7dce2] bg-white px-3.5 sm:px-5"
@@ -277,7 +486,9 @@ onMounted(load);
             {{
               activeSegment
                 ? `本层 ${Math.round(activeSegment.distanceMeters)} 米`
-                : "路线不经过本层"
+                : route
+                  ? "路线不经过本层"
+                  : "尚未规划路线"
             }}
           </span>
         </div>
@@ -311,39 +522,47 @@ onMounted(load);
         >
           <div class="grid grid-cols-[minmax(0,1fr)_36px] gap-2">
             <div class="space-y-2">
-              <label class="grid grid-cols-[38px_minmax(0,1fr)] items-center">
+              <div class="grid grid-cols-[38px_minmax(0,1fr)] items-center">
                 <span class="text-xs font-semibold text-[#15803d]">起点</span>
-                <select
-                  v-model="startPoiId"
-                  class="h-10 min-w-0 rounded-md border border-[#cfd5dc] bg-white px-2 text-sm outline-none focus:border-[#087f8c] focus:ring-2 focus:ring-[#b9dfe0]"
+                <button
+                  class="flex h-11 min-w-0 items-center justify-between gap-2 rounded-md border border-[#cfd5dc] bg-white px-3 text-left outline-none focus:border-[#087f8c] focus:ring-2 focus:ring-[#b9dfe0]"
+                  type="button"
+                  aria-label="选择起点"
+                  aria-haspopup="dialog"
+                  @click="openPoiSearch('start')"
                 >
-                  <option
-                    v-for="poi in pois"
-                    :key="poi.id"
-                    :value="poi.id"
-                  >
-                    {{ poi.floorCode }} · {{ poi.name }}
-                  </option>
-                </select>
-              </label>
-              <label class="grid grid-cols-[38px_minmax(0,1fr)] items-center">
+                  <span class="truncate text-sm">
+                    {{
+                      startPoi
+                        ? `${startPoi.floorCode} · ${startPoi.name}`
+                        : "选择起点"
+                    }}
+                  </span>
+                  <ChevronDown class="shrink-0 text-[#667085]" :size="16" />
+                </button>
+              </div>
+              <div class="grid grid-cols-[38px_minmax(0,1fr)] items-center">
                 <span class="text-xs font-semibold text-[#b91c1c]">终点</span>
-                <select
-                  v-model="endPoiId"
-                  class="h-10 min-w-0 rounded-md border border-[#cfd5dc] bg-white px-2 text-sm outline-none focus:border-[#087f8c] focus:ring-2 focus:ring-[#b9dfe0]"
+                <button
+                  class="flex h-11 min-w-0 items-center justify-between gap-2 rounded-md border border-[#cfd5dc] bg-white px-3 text-left outline-none focus:border-[#087f8c] focus:ring-2 focus:ring-[#b9dfe0]"
+                  type="button"
+                  aria-label="选择目的地"
+                  aria-haspopup="dialog"
+                  @click="openPoiSearch('end')"
                 >
-                  <option
-                    v-for="poi in pois"
-                    :key="poi.id"
-                    :value="poi.id"
-                  >
-                    {{ poi.floorCode }} · {{ poi.name }}
-                  </option>
-                </select>
-              </label>
+                  <span class="truncate text-sm">
+                    {{
+                      endPoi
+                        ? `${endPoi.floorCode} · ${endPoi.name}`
+                        : "选择目的地"
+                    }}
+                  </span>
+                  <ChevronDown class="shrink-0 text-[#667085]" :size="16" />
+                </button>
+              </div>
             </div>
             <button
-              class="mt-6 grid size-9 place-items-center rounded-md border border-[#cfd5dc] bg-white text-[#4b5563] active:translate-y-px"
+              class="mt-7 grid size-9 place-items-center rounded-md border border-[#cfd5dc] bg-white text-[#4b5563] active:translate-y-px"
               type="button"
               title="交换起点和终点"
               @click="swapEndpoints"
@@ -362,12 +581,13 @@ onMounted(load);
               <button
                 type="button"
                 class="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-sm px-2.5 text-xs font-medium"
+                :aria-pressed="routeMode === 'normal'"
                 :class="
                   routeMode === 'normal'
                     ? 'bg-[#e3f3f3] text-[#066d77]'
                     : 'text-[#667085]'
                 "
-                @click="routeMode = 'normal'"
+                @click="chooseRouteMode('normal')"
               >
                 <Footprints :size="14" />
                 常规
@@ -375,12 +595,13 @@ onMounted(load);
               <button
                 type="button"
                 class="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-sm px-2.5 text-xs font-medium"
+                :aria-pressed="routeMode === 'accessible'"
                 :class="
                   routeMode === 'accessible'
                     ? 'bg-[#e3f3f3] text-[#066d77]'
                     : 'text-[#667085]'
                 "
-                @click="routeMode = 'accessible'"
+                @click="chooseRouteMode('accessible')"
               >
                 <Accessibility :size="14" />
                 无障碍
@@ -403,6 +624,14 @@ onMounted(load);
             <AlertCircle :size="14" class="mt-0.5 shrink-0" />
             {{ routeError }}
           </p>
+          <p
+            v-if="deepLinkNotice"
+            class="mt-2 flex items-start gap-1.5 border-y border-[#fed7aa] bg-[#fff7ed] px-2.5 py-2 text-[11px] leading-4 text-[#9a3412]"
+            role="status"
+          >
+            <AlertCircle :size="14" class="mt-0.5 shrink-0" />
+            {{ deepLinkNotice }}
+          </p>
         </form>
 
         <section v-if="route" class="p-3.5 sm:p-4">
@@ -411,28 +640,40 @@ onMounted(load);
               <Route :size="17" class="text-[#087f8c]" />
               路线步骤
             </h2>
-            <span class="text-[11px] text-[#667085]">
-              {{ route.steps.length }} 步
-            </span>
+            <button
+              class="flex h-8 items-center gap-1.5 rounded-md border border-[#cfd5dc] bg-white px-2.5 text-[11px] font-semibold text-[#344054] active:translate-y-px"
+              type="button"
+              @click="openStepNavigator()"
+            >
+              <ListStart :size="15" />
+              逐步查看
+            </button>
           </div>
           <ol class="divide-y divide-[#e4e7eb] border-y border-[#e4e7eb]">
             <li
-              v-for="step in route.steps"
+              v-for="(step, index) in route.steps"
               :key="step.sequence"
-              class="grid grid-cols-[28px_minmax(0,1fr)_16px] items-start gap-2 py-3"
             >
-              <span
-                class="grid size-7 place-items-center rounded-md bg-[#e3f3f3] text-xs font-bold text-[#066d77]"
+              <button
+                class="grid w-full grid-cols-[28px_minmax(0,1fr)_16px] items-start gap-2 py-3 text-left active:bg-[#f3f5f7]"
+                type="button"
+                @click="openStepNavigator(index)"
               >
-                {{ step.sequence + 1 }}
-              </span>
-              <div class="min-w-0">
-                <p class="text-sm leading-5">{{ step.instruction }}</p>
-                <span class="mt-0.5 block text-[11px] text-[#667085]">
-                  {{ floorName(step.floorId) }}
+                <span
+                  class="grid size-7 place-items-center rounded-md bg-[#e3f3f3] text-xs font-bold text-[#066d77]"
+                >
+                  {{ index + 1 }}
                 </span>
-              </div>
-              <ChevronRight :size="16" class="mt-1 text-[#98a2b3]" />
+                <span class="min-w-0">
+                  <span class="block text-sm leading-5">
+                    {{ step.instruction }}
+                  </span>
+                  <span class="mt-0.5 block text-[11px] text-[#667085]">
+                    {{ floorName(step.floorId) }}
+                  </span>
+                </span>
+                <ChevronRight :size="16" class="mt-1 text-[#98a2b3]" />
+              </button>
             </li>
           </ol>
           <p
@@ -494,5 +735,27 @@ onMounted(load);
         </div>
       </section>
     </main>
+
+    <PoiSearchDialog
+      v-if="context"
+      ref="poiSearchDialog"
+      :pois="pois"
+      :floors="context.floors"
+      :start-poi-id="startPoiId"
+      :end-poi-id="endPoiId"
+      @select="selectEndpoint"
+    />
+
+    <StepNavigator
+      v-if="stepNavigatorOpen && currentStep && route"
+      :step="currentStep"
+      :index="currentStepIndex"
+      :total="route.steps.length"
+      :floor-label="currentStepFloorLabel"
+      @previous="moveStep(-1)"
+      @next="moveStep(1)"
+      @view-map="viewCurrentStepMap"
+      @close="stepNavigatorOpen = false"
+    />
   </div>
 </template>

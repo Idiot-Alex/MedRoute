@@ -93,10 +93,42 @@ const edges: PathEdge[] = [
 ];
 
 const pois: Poi[] = [
-  poi("1201", "P-ENTRANCE", "门诊主入口", "entrance", 0, "1001"),
-  poi("1202", "P-PHARMACY", "门诊药房", "pharmacy", 0, "1003"),
-  poi("2201", "P-LAB", "检验科", "laboratory", 1, "2002"),
-  poi("3201", "P-ULTRASOUND", "超声诊断科", "department", 2, "3002"),
+  poi(
+    "1201",
+    "P-ENTRANCE",
+    "门诊主入口",
+    "entrance",
+    0,
+    "1001",
+    ["入口", "大门", "menzhenrukou", "mzrk"],
+  ),
+  poi(
+    "1202",
+    "P-PHARMACY",
+    "门诊药房",
+    "pharmacy",
+    0,
+    "1003",
+    ["取药", "yaofang", "yf"],
+  ),
+  poi(
+    "2201",
+    "P-LAB",
+    "检验科",
+    "laboratory",
+    1,
+    "2002",
+    ["检验", "抽血", "jianyan", "jy"],
+  ),
+  poi(
+    "3201",
+    "P-ULTRASOUND",
+    "超声诊断科",
+    "department",
+    2,
+    "3002",
+    ["超声", "B超", "chaosheng", "cs"],
+  ),
 ];
 
 const connector: Connector = {
@@ -553,6 +585,7 @@ function poi(
   category: string,
   floorIndex: number,
   nodeSuffix: string,
+  keywords: string[],
 ): Poi {
   const boundNode = nodes.find((item) => item.id === id(nodeSuffix))!;
   return {
@@ -567,7 +600,7 @@ function poi(
     accessScope: "public",
     accessible: true,
     enabled: true,
-    keywords: [name],
+    keywords: [name, ...keywords],
   };
 }
 
