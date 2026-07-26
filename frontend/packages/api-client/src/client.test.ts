@@ -150,6 +150,65 @@ describe("MedRouteApiClient admin workflows", () => {
   });
 });
 
+describe("MedRouteApiClient navigation reliability", () => {
+  it("times out a navigation request that never responds", async () => {
+    const client = new MedRouteApiClient({
+      apiBase: "http://127.0.0.1:8080",
+      fetchImpl: abortableFetch,
+      navigationTimeoutMs: 5,
+    });
+
+    await expect(
+      client.navigationContext("building-1"),
+    ).rejects.toMatchObject({
+      status: 0,
+      code: "REQUEST_TIMEOUT",
+    });
+  });
+
+  it("distinguishes caller cancellation from a network failure", async () => {
+    const controller = new AbortController();
+    const client = new MedRouteApiClient({
+      apiBase: "http://127.0.0.1:8080",
+      fetchImpl: abortableFetch,
+    });
+    const pending = client.calculateRoute(
+      {
+        buildingId: "building-1",
+        expectedReleaseId: "release-1",
+        startPoiId: "poi-1",
+        endPoiId: "poi-2",
+        routeMode: "normal",
+      },
+      controller.signal,
+    );
+    const assertion = expect(pending).rejects.toMatchObject({
+      status: 0,
+      code: "REQUEST_ABORTED",
+    });
+
+    controller.abort();
+
+    await assertion;
+  });
+});
+
+function abortableFetch(
+  _input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  return new Promise((_resolve, reject) => {
+    const rejectAbort = () => reject(new Error("aborted"));
+    if (init?.signal?.aborted) {
+      rejectAbort();
+      return;
+    }
+    init?.signal?.addEventListener("abort", rejectAbort, {
+      once: true,
+    });
+  });
+}
+
 function jsonResponse(
   body: unknown,
   headers: Record<string, string> = {},

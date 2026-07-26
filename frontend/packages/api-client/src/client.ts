@@ -16,6 +16,7 @@ import type {
 export interface ApiClientOptions {
   apiBase: string;
   fetchImpl?: typeof fetch;
+  navigationTimeoutMs?: number;
 }
 
 export interface WorkspaceResult {
@@ -64,10 +65,12 @@ export class ApiError extends Error {
 export class MedRouteApiClient {
   readonly apiBase: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly navigationTimeoutMs: number;
 
   constructor(options: ApiClientOptions) {
     this.apiBase = options.apiBase.replace(/\/$/, "");
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.navigationTimeoutMs = options.navigationTimeoutMs ?? 12_000;
   }
 
   async listReleases(buildingId: string): Promise<ReleaseListResponse> {
@@ -346,9 +349,13 @@ export class MedRouteApiClient {
     return blob;
   }
 
-  async navigationContext(buildingId: string): Promise<NavigationContext> {
+  async navigationContext(
+    buildingId: string,
+    signal?: AbortSignal,
+  ): Promise<NavigationContext> {
     const { body } = await this.request<NavigationContext>(
       `/api/buildings/${buildingId}/navigation-context`,
+      { signal, timeoutMs: this.navigationTimeoutMs },
     );
     return body;
   }
@@ -356,27 +363,42 @@ export class MedRouteApiClient {
   async navigationPois(
     buildingId: string,
     keyword = "",
+    signal?: AbortSignal,
   ): Promise<NavigationPoiSearchResponse> {
     const query = keyword ? `?keyword=${encodeURIComponent(keyword)}` : "";
     const { body } = await this.request<NavigationPoiSearchResponse>(
       `/api/buildings/${buildingId}/pois${query}`,
+      { signal, timeoutMs: this.navigationTimeoutMs },
     );
     return body;
   }
 
-  async calculateRoute(request: RouteRequest): Promise<NavigationRoute> {
+  async calculateRoute(
+    request: RouteRequest,
+    signal?: AbortSignal,
+  ): Promise<NavigationRoute> {
     const { body } = await this.request<NavigationRoute>("/api/routes", {
       method: "POST",
       body: JSON.stringify(request),
+      signal,
+      timeoutMs: this.navigationTimeoutMs,
     });
     return body;
   }
 
   private async request<T>(
     path: string,
-    options: RequestInit & { admin?: boolean } = {},
+    options: RequestInit & {
+      admin?: boolean;
+      timeoutMs?: number;
+    } = {},
   ): Promise<{ body: T; response: Response }> {
-    const { admin, ...requestOptions } = options;
+    const {
+      admin,
+      timeoutMs,
+      signal,
+      ...requestOptions
+    } = options;
     const headers = new Headers(options.headers);
     if (!headers.has("Accept")) {
       headers.set("Accept", "application/json");
@@ -391,26 +413,67 @@ export class MedRouteApiClient {
     ) {
       headers.set("Content-Type", "application/json");
     }
+    const controller = new AbortController();
+    let timedOut = false;
+    const abortFromCaller = () => controller.abort(signal?.reason);
+    if (signal?.aborted) {
+      abortFromCaller();
+    } else {
+      signal?.addEventListener("abort", abortFromCaller, { once: true });
+    }
+    const timeoutId =
+      timeoutMs && timeoutMs > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+          }, timeoutMs)
+        : undefined;
+
     let response: Response;
+    let data: unknown = null;
     try {
       response = await this.fetchImpl(`${this.apiBase}${path}`, {
         cache: "no-store",
         ...requestOptions,
         headers,
+        signal: controller.signal,
       });
+      const contentType = response.headers.get("Content-Type") ?? "";
+      data = contentType.includes("application/json")
+        ? await response.json()
+        : null;
     } catch {
+      if (timedOut) {
+        throw new ApiError(
+          "请求超时，请检查网络后重试。",
+          0,
+          "REQUEST_TIMEOUT",
+        );
+      }
+      if (signal?.aborted) {
+        throw new ApiError("请求已取消。", 0, "REQUEST_ABORTED");
+      }
       throw new ApiError(
         `无法连接后端 ${this.apiBase}。`,
         0,
         "NETWORK_ERROR",
       );
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      signal?.removeEventListener("abort", abortFromCaller);
     }
-    const contentType = response.headers.get("Content-Type") ?? "";
-    const data = contentType.includes("application/json")
-      ? await response.json()
-      : null;
     if (!response.ok) {
-      const problem = data?.error;
+      const problem = (
+        data as {
+          error?: {
+            message?: string;
+            code?: string;
+            details?: unknown[];
+          };
+        } | null
+      )?.error;
       throw new ApiError(
         problem?.message ?? `请求失败（HTTP ${response.status}）。`,
         response.status,

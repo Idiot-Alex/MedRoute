@@ -29,6 +29,7 @@ import {
   Text,
 } from "ol/style.js";
 import { getCenter } from "ol/extent.js";
+import { ImageOff, RefreshCw } from "@lucide/vue";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 const props = defineProps<{
@@ -41,8 +42,10 @@ const props = defineProps<{
 }>();
 
 const target = ref<HTMLDivElement | null>(null);
+const imageFailed = ref(false);
 let map: Map | null = null;
 let resizeObserver: ResizeObserver | null = null;
+let setupRevision = 0;
 
 function endpointStyle(label: string, color: string): Style {
   return new Style({
@@ -64,6 +67,8 @@ function setupMap(): void {
   if (!target.value) {
     return;
   }
+  const revision = ++setupRevision;
+  imageFailed.value = false;
   map?.setTarget(undefined);
   const projection = createFloorProjection(props.floor);
   const extent = floorExtent(props.floor);
@@ -72,6 +77,21 @@ function setupMap(): void {
     props.apiBase,
     props.assetBase,
   );
+  const imageSource = new ImageStatic({
+    url: imageUrl,
+    projection,
+    imageExtent: extent,
+  });
+  imageSource.on("imageloaderror", () => {
+    if (setupRevision === revision) {
+      imageFailed.value = true;
+    }
+  });
+  imageSource.on("imageloadend", () => {
+    if (setupRevision === revision) {
+      imageFailed.value = false;
+    }
+  });
   const endpointSource = new VectorSource<Feature<Point>>();
   if (props.startPoi?.floorId === props.floor.id) {
     const feature = new Feature({
@@ -111,11 +131,7 @@ function setupMap(): void {
     }),
     layers: [
       new ImageLayer({
-        source: new ImageStatic({
-          url: imageUrl,
-          projection,
-          imageExtent: extent,
-        }),
+        source: imageSource,
       }),
       routeLayer,
       new VectorLayer({
@@ -163,15 +179,39 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  setupRevision += 1;
   resizeObserver?.disconnect();
   map?.setTarget(undefined);
 });
 </script>
 
 <template>
-  <div
-    ref="target"
-    class="route-map"
-    aria-label="当前楼层导航地图"
-  ></div>
+  <div class="relative size-full">
+    <div
+      ref="target"
+      class="route-map"
+      aria-label="当前楼层导航地图"
+    ></div>
+    <div
+      v-if="imageFailed"
+      class="absolute inset-0 grid place-items-center bg-[#f4f6f8]/95 p-5 text-center"
+      role="alert"
+    >
+      <div>
+        <ImageOff class="mx-auto text-[#b91c1c]" :size="25" />
+        <strong class="mt-3 block text-sm">楼层图加载失败</strong>
+        <p class="mt-1 text-xs text-[#667085]">
+          请检查网络后重新加载本层图片。
+        </p>
+        <button
+          class="mx-auto mt-4 flex h-9 items-center gap-1.5 rounded-md border border-[#cfd5dc] bg-white px-3 text-xs font-semibold text-[#344054] active:translate-y-px"
+          type="button"
+          @click="setupMap"
+        >
+          <RefreshCw :size="15" />
+          重试图片
+        </button>
+      </div>
+    </div>
+  </div>
 </template>

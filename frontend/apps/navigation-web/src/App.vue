@@ -79,6 +79,7 @@ const currentStepIndex = ref(0);
 const poiSearchDialog = ref<
   InstanceType<typeof PoiSearchDialog> | null
 >(null);
+let routeRequestController: AbortController | null = null;
 
 const activeFloor = computed(
   () =>
@@ -119,10 +120,63 @@ const currentStepFloorLabel = computed(() =>
   floorName(currentStep.value?.floorId ?? null),
 );
 
+type ApiProblem = Pick<ApiError, "code" | "status" | "message">;
+
+function apiProblem(caught: unknown): ApiProblem | null {
+  if (
+    typeof caught !== "object" ||
+    caught === null ||
+    typeof (caught as Partial<ApiProblem>).code !== "string" ||
+    typeof (caught as Partial<ApiProblem>).status !== "number" ||
+    typeof (caught as Partial<ApiProblem>).message !== "string"
+  ) {
+    return null;
+  }
+  return caught as ApiProblem;
+}
+
+function navigationErrorMessage(
+  caught: unknown,
+  fallback: string,
+): string {
+  const problem = apiProblem(caught);
+  if (!problem) {
+    return fallback;
+  }
+  if (problem.code === "NETWORK_ERROR") {
+    return "网络连接失败，请确认已连接医院网络后重试。";
+  }
+  if (problem.code === "REQUEST_TIMEOUT") {
+    return "请求超时，请检查网络信号后重试。";
+  }
+  if (problem.status >= 500) {
+    return "导航服务暂时不可用，请稍后重试。";
+  }
+  return problem.message;
+}
+
+function cancelRouteRequest(): void {
+  const controller = routeRequestController;
+  routeRequestController = null;
+  controller?.abort();
+  routeLoading.value = false;
+}
+
 async function load(): Promise<void> {
+  const startReference =
+    startPoi.value?.code ?? requestedStartReference;
+  const endReference =
+    endPoi.value?.code ?? requestedEndReference;
+  cancelRouteRequest();
   loading.value = true;
   error.value = "";
+  routeError.value = "";
+  context.value = null;
+  pois.value = [];
   route.value = null;
+  startPoiId.value = "";
+  endPoiId.value = "";
+  activeFloorId.value = "";
   stepNavigatorOpen.value = false;
   deepLinkNotice.value = "";
   try {
@@ -157,17 +211,17 @@ async function load(): Promise<void> {
       pois.value.find((poi) => poi.id !== entrance?.id) ?? pois.value[1];
     const requestedStart = findNavigationPoiByReference(
       pois.value,
-      requestedStartReference,
+      startReference,
     );
     const requestedEnd = findNavigationPoiByReference(
       pois.value,
-      requestedEndReference,
+      endReference,
     );
     const notices: string[] = [];
-    if (requestedStartReference && !requestedStart) {
+    if (startReference && !requestedStart) {
       notices.push("链接中的起点已失效，已改为默认入口");
     }
-    if (requestedEndReference && !requestedEnd) {
+    if (endReference && !requestedEnd) {
       notices.push("链接中的目的地已失效，请重新选择");
     }
     if (
@@ -197,7 +251,7 @@ async function load(): Promise<void> {
     deepLinkNotice.value = notices.join("；");
     activeFloorId.value =
       resolvedStart.floorId ?? context.value.floors[0]?.id ?? "";
-    if (demoMode.value || requestedEnd) {
+    if (demoMode.value || endReference) {
       await calculate();
     } else if (
       params.has("start") ||
@@ -210,8 +264,10 @@ async function load(): Promise<void> {
       syncNavigationUrl();
     }
   } catch (caught) {
-    error.value =
-      caught instanceof ApiError ? caught.message : "导航地图加载失败。";
+    error.value = navigationErrorMessage(
+      caught,
+      "网络或导航服务暂时不可用，请稍后重试。",
+    );
   } finally {
     loading.value = false;
   }
@@ -236,35 +292,148 @@ async function calculate(): Promise<void> {
       startPoiId.value === endPoiId.value ? "起点和终点不能相同。" : "";
     return;
   }
+  cancelRouteRequest();
+  const controller = new AbortController();
+  routeRequestController = controller;
   routeLoading.value = true;
   routeError.value = "";
+  route.value = null;
+  stepNavigatorOpen.value = false;
   try {
-    route.value = demoMode.value
+    const nextRoute = demoMode.value
       ? demoRoute(startPoiId.value, endPoiId.value, routeMode.value)
-      : await client.calculateRoute({
-          buildingId,
-          expectedReleaseId: context.value.release.id,
-          startPoiId: startPoiId.value,
-          endPoiId: endPoiId.value,
-          routeMode: routeMode.value,
-        });
+      : await calculatePublishedRoute(controller.signal);
+    if (
+      controller.signal.aborted ||
+      routeRequestController !== controller
+    ) {
+      return;
+    }
+    route.value = nextRoute;
     currentStepIndex.value = 0;
-    stepNavigatorOpen.value = false;
     activeFloorId.value =
-      route.value.segments[0]?.floorId ??
+      nextRoute.segments[0]?.floorId ??
       startPoi.value?.floorId ??
       context.value.floors[0]?.id ??
       "";
     syncNavigationUrl();
   } catch (caught) {
-    routeError.value =
-      caught instanceof ApiError ? caught.message : "暂时无法计算这条路线。";
+    const problem = apiProblem(caught);
+    if (
+      controller.signal.aborted ||
+      problem?.code === "REQUEST_ABORTED"
+    ) {
+      return;
+    }
+    route.value = null;
+    routeError.value = navigationErrorMessage(
+      caught,
+      "暂时无法计算这条路线。",
+    );
   } finally {
-    routeLoading.value = false;
+    if (routeRequestController === controller) {
+      routeRequestController = null;
+      routeLoading.value = false;
+    }
   }
 }
 
+async function calculatePublishedRoute(
+  signal: AbortSignal,
+): Promise<NavigationRoute> {
+  const request = () => {
+    if (!context.value) {
+      throw new ApiError(
+        "医院地图尚未加载。",
+        422,
+        "NAVIGATION_CONTEXT_MISSING",
+      );
+    }
+    return client.calculateRoute(
+      {
+        buildingId,
+        expectedReleaseId: context.value.release.id,
+        startPoiId: startPoiId.value,
+        endPoiId: endPoiId.value,
+        routeMode: routeMode.value,
+      },
+      signal,
+    );
+  };
+
+  try {
+    return await request();
+  } catch (caught) {
+    const problem = apiProblem(caught);
+    if (
+      !problem ||
+      problem.code !== "RELEASE_MISMATCH"
+    ) {
+      throw caught;
+    }
+    await refreshPublishedData(signal);
+    return request();
+  }
+}
+
+async function refreshPublishedData(signal: AbortSignal): Promise<void> {
+  const startCode = startPoi.value?.code ?? "";
+  const endCode = endPoi.value?.code ?? "";
+  const [nextContext, poiResponse] = await Promise.all([
+    client.navigationContext(buildingId, signal),
+    client.navigationPois(buildingId, "", signal),
+  ]);
+  if (poiResponse.releaseId !== nextContext.release.id) {
+    throw new ApiError(
+      "医院地图正在更新，请稍后重试。",
+      409,
+      "NAVIGATION_RELEASE_MISMATCH",
+    );
+  }
+
+  context.value = nextContext;
+  pois.value = poiResponse.items;
+  if (!nextContext.supportedRouteModes.includes(routeMode.value)) {
+    routeMode.value = "normal";
+  }
+  const nextStart = findNavigationPoiByReference(pois.value, startCode);
+  const nextEnd = findNavigationPoiByReference(pois.value, endCode);
+  if (
+    !nextStart ||
+    !nextEnd ||
+    nextStart.id === nextEnd.id
+  ) {
+    const entrance =
+      pois.value.find((poi) => poi.category === "entrance") ??
+      pois.value[0];
+    const destination =
+      pois.value.find((poi) => poi.id !== entrance?.id) ??
+      pois.value[1];
+    startPoiId.value = nextStart?.id ?? entrance?.id ?? "";
+    endPoiId.value =
+      nextEnd?.id === startPoiId.value
+        ? destination?.id ?? ""
+        : nextEnd?.id ?? destination?.id ?? "";
+    activeFloorId.value =
+      startPoi.value?.floorId ?? nextContext.floors[0]?.id ?? "";
+    syncNavigationUrl();
+    throw new ApiError(
+      "医院地图已更新，原起点或目的地已变化，请确认后重新导航。",
+      409,
+      "NAVIGATION_ENDPOINT_CHANGED",
+    );
+  }
+
+  startPoiId.value = nextStart.id;
+  endPoiId.value = nextEnd.id;
+  activeFloorId.value = nextStart.floorId;
+  deepLinkNotice.value =
+    "医院地图已更新，已按最新版本重新规划路线";
+  syncNavigationUrl();
+}
+
 function swapEndpoints(): void {
+  cancelRouteRequest();
   [startPoiId.value, endPoiId.value] = [
     endPoiId.value,
     startPoiId.value,
@@ -301,6 +470,7 @@ function syncNavigationUrl(): void {
 }
 
 function openPoiSearch(endpoint: "start" | "end"): void {
+  cancelRouteRequest();
   poiSearchDialog.value?.open(endpoint);
 }
 
@@ -308,6 +478,7 @@ function selectEndpoint(
   endpoint: "start" | "end",
   poiId: string,
 ): void {
+  cancelRouteRequest();
   if (endpoint === "start") {
     startPoiId.value = poiId;
   } else {
@@ -331,6 +502,7 @@ function chooseRouteMode(mode: "normal" | "accessible"): void {
   if (routeMode.value === mode) {
     return;
   }
+  cancelRouteRequest();
   routeMode.value = mode;
   route.value = null;
   routeError.value = "";
@@ -607,12 +779,17 @@ onMounted(load);
               </button>
             </div>
             <button
-              class="flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md bg-[#087f8c] px-3.5 text-xs font-semibold text-white active:translate-y-px disabled:opacity-40"
+              class="flex h-9 min-w-24 items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-[#087f8c] px-3 text-xs font-semibold text-white active:translate-y-px disabled:opacity-40"
               type="submit"
               :disabled="routeLoading"
             >
-              <Navigation :size="15" />
-              开始导航
+              <RefreshCw
+                v-if="routeLoading"
+                class="animate-spin"
+                :size="15"
+              />
+              <Navigation v-else :size="15" />
+              {{ routeLoading ? "正在计算" : "开始导航" }}
             </button>
           </div>
           <p
