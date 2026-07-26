@@ -192,7 +192,6 @@ function handleNodeChange(event: Event): void {
           >
             <option value="public">公共</option>
             <option value="staff">员工</option>
-            <option value="restricted">受限</option>
           </select>
         </label>
       </div>
@@ -394,7 +393,6 @@ function handleNodeChange(event: Event): void {
           >
             <option value="public">公共</option>
             <option value="staff">员工</option>
-            <option value="restricted">受限</option>
           </select>
         </label>
       </div>

@@ -23,10 +23,13 @@ export interface Building {
   name: string;
 }
 
+export type ReleaseStatus = "draft" | "published";
+export type RouteMode = "normal" | "accessible";
+
 export interface AdminRelease {
   id: string;
   code: string;
-  status: "draft" | "published";
+  status: ReleaseStatus;
   contentRevision: number;
   basedOnReleaseId: string | null;
   description: string;
@@ -127,16 +130,89 @@ export interface AdminWorkspace {
 export interface ReleaseListItem {
   id: string;
   code: string;
-  status: "draft" | "published";
+  status: ReleaseStatus;
   active: boolean;
   contentRevision: number;
+  basedOnReleaseId: string | null;
   description: string;
+  createdBy: string;
+  createdAt: string;
+  publishedBy: string | null;
+  publishedAt: string | null;
+  validationPassed: boolean | null;
+  validatedRevision: number | null;
 }
 
 export interface ReleaseListResponse {
-  buildingId: string;
-  activeReleaseId: string | null;
   items: ReleaseListItem[];
+  nextPageToken: string | null;
+}
+
+export interface ValidationIssue {
+  code: string;
+  elementType: string;
+  elementId: string;
+  message: string;
+}
+
+export interface RouteRegressionResult {
+  caseId: string;
+  caseCode: string;
+  caseName: string;
+  routeMode: RouteMode;
+  critical: boolean;
+  startPoiCode: string;
+  startPoiName: string | null;
+  endPoiCode: string;
+  endPoiName: string | null;
+  passed: boolean;
+  resultCode: string;
+  distanceMeters: number | null;
+  estimatedSeconds: number | null;
+  connectorCodes: string[];
+  message: string;
+}
+
+export interface AdminValidation {
+  releaseId: string;
+  contentRevision: number;
+  passed: boolean;
+  errors: ValidationIssue[];
+  warnings: ValidationIssue[];
+  routeRegressions: RouteRegressionResult[];
+}
+
+export interface RouteRegressionCase {
+  id: string;
+  code: string;
+  name: string;
+  startPoiCode: string;
+  endPoiCode: string;
+  routeMode: RouteMode;
+  critical: boolean;
+  enabled: boolean;
+  maxDistanceMeters: number | null;
+  maxEstimatedSeconds: number | null;
+  createdBy: string;
+  createdAt: string;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface RouteRegressionCaseListResponse {
+  items: RouteRegressionCase[];
+}
+
+export interface RouteRegressionCasePayload {
+  code: string;
+  name: string;
+  startPoiCode: string;
+  endPoiCode: string;
+  routeMode: RouteMode;
+  critical: boolean;
+  enabled: boolean;
+  maxDistanceMeters: number | null;
+  maxEstimatedSeconds: number | null;
 }
 
 export interface NavigationRelease {

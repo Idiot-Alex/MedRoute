@@ -3,16 +3,26 @@ import {
   ApiError,
   MedRouteApiClient,
   resolveMapImageUrl,
+  type CreateDraftRequest,
 } from "@medroute/api-client";
-import { demoAdminWorkspace } from "@medroute/api-client/demo";
+import {
+  demoAdminWorkspace,
+  demoReleaseList,
+  demoRouteRegressionCases,
+  demoValidation,
+} from "@medroute/api-client/demo";
 import {
   DEFAULT_BUILDING_ID,
+  canPublishRelease,
+  canRollbackRelease,
   graphForFloor,
+  selectionForValidationIssue,
   stopsForConnector,
   validateConnectorRelations,
   moveNode,
   nextCode,
   selectedObject,
+  type AdminValidation,
   type AdminWorkspace,
   type Connector,
   type ConnectorIssue,
@@ -23,6 +33,10 @@ import {
   type PathNode,
   type PixelCoordinate,
   type Poi,
+  type ReleaseListItem,
+  type RouteRegressionCase,
+  type RouteRegressionCasePayload,
+  type ValidationIssue,
   type VerticalLink,
 } from "@medroute/map-core";
 import {
@@ -42,6 +56,10 @@ import ConnectorValidation from "./components/ConnectorValidation.vue";
 import CrossFloorInspector from "./components/CrossFloorInspector.vue";
 import CrossFloorPanel from "./components/CrossFloorPanel.vue";
 import FloorMapEditor from "./components/FloorMapEditor.vue";
+import PublicationWorkbench from "./components/PublicationWorkbench.vue";
+import ReleaseDialogs from "./components/ReleaseDialogs.vue";
+import ReleasePanel from "./components/ReleasePanel.vue";
+import RouteRegressionDialog from "./components/RouteRegressionDialog.vue";
 
 const params = new URLSearchParams(window.location.search);
 const apiBase = (params.get("api") ?? "http://127.0.0.1:8080").replace(
@@ -53,21 +71,32 @@ const assetBase = params.get("assets") ?? window.location.origin;
 const client = new MedRouteApiClient({ apiBase });
 
 const workspace = ref<AdminWorkspace | null>(null);
+const releases = ref<ReleaseListItem[]>([]);
+const regressionCases = ref<RouteRegressionCase[]>([]);
+const releaseValidation = ref<AdminValidation | null>(null);
 const etag = ref("");
 const activeFloorId = ref("");
 const tool = ref<EditorTool>("select");
 const selection = ref<MapSelection | null>(null);
 const edgeStartId = ref<string | null>(null);
 const activeConnectorId = ref<string | null>(null);
-const rightTab = ref<"properties" | "validation">("properties");
+const rightTab = ref<"properties" | "relations" | "publication">(
+  "properties",
+);
 const dirty = ref(false);
 const busy = ref(false);
 const error = ref("");
 const toast = ref("");
 const renderRevision = ref(0);
 const demoMode = ref(params.get("demo") === "1");
+const demoInitialized = ref(false);
+const demoWorkspaces = new Map<string, AdminWorkspace>();
 const connectorDialog = ref<HTMLDialogElement | null>(null);
 const linkDialog = ref<HTMLDialogElement | null>(null);
+const releaseDialogs = ref<InstanceType<typeof ReleaseDialogs> | null>(null);
+const regressionDialog = ref<
+  InstanceType<typeof RouteRegressionDialog> | null
+>(null);
 const connectorDraft = reactive({
   name: "",
   code: "",
@@ -123,6 +152,22 @@ const connectorErrorCount = computed(
     connectorIssues.value.filter((issue) => issue.severity === "error")
       .length,
 );
+
+const publicationIssueCount = computed(() => {
+  if (
+    !workspace.value ||
+    !releaseValidation.value ||
+    releaseValidation.value.releaseId !== workspace.value.release.id ||
+    releaseValidation.value.contentRevision !==
+      workspace.value.release.contentRevision
+  ) {
+    return 0;
+  }
+  return (
+    releaseValidation.value.errors.length +
+    releaseValidation.value.warnings.length
+  );
+});
 
 const relationSelection = computed<MapSelection | null>(() =>
   selection.value &&
@@ -185,26 +230,94 @@ const imageUrl = computed(() =>
     : "",
 );
 
-async function load(): Promise<void> {
+function initializeDemoSession(): void {
+  if (demoInitialized.value) {
+    return;
+  }
+  const fixture = demoReleaseList();
+  releases.value = fixture.items;
+  regressionCases.value = demoRouteRegressionCases();
+  demoWorkspaces.clear();
+  for (const release of releases.value) {
+    demoWorkspaces.set(release.id, demoAdminWorkspace(release.id));
+  }
+  demoInitialized.value = true;
+}
+
+function cloneWorkspace(source: AdminWorkspace): AdminWorkspace {
+  return JSON.parse(JSON.stringify(source)) as AdminWorkspace;
+}
+
+function preferredRelease(
+  preferredReleaseId?: string,
+): ReleaseListItem | null {
+  return (
+    (preferredReleaseId
+      ? releases.value.find((release) => release.id === preferredReleaseId)
+      : null) ??
+    releases.value.find((release) => release.status === "draft") ??
+    releases.value.find((release) => release.active) ??
+    releases.value[0] ??
+    null
+  );
+}
+
+function applyWorkspace(nextWorkspace: AdminWorkspace, nextEtag: string): void {
+  const previousFloorId = activeFloorId.value;
+  workspace.value = nextWorkspace;
+  etag.value = nextEtag;
+  activeFloorId.value = nextWorkspace.floors.some(
+    (floor) => floor.id === previousFloorId,
+  )
+    ? previousFloorId
+    : nextWorkspace.floors[0]?.id ?? "";
+  activeConnectorId.value =
+    nextWorkspace.graph.connectors[0]?.id ?? null;
+  selection.value = null;
+  edgeStartId.value = null;
+  tool.value = "select";
+  rightTab.value = "properties";
+  releaseValidation.value = null;
+  dirty.value = false;
+  renderRevision.value += 1;
+}
+
+async function load(preferredReleaseId?: string): Promise<void> {
   busy.value = true;
   error.value = "";
   selection.value = null;
   edgeStartId.value = null;
   try {
     if (demoMode.value) {
-      workspace.value = demoAdminWorkspace();
-      etag.value = "0";
+      initializeDemoSession();
     } else {
-      const result = await client.loadPreferredWorkspace(buildingId);
-      workspace.value = result.workspace;
-      etag.value = result.etag;
+      const [releaseList, regressionList] = await Promise.all([
+        client.listReleases(buildingId),
+        client.listRouteRegressionCases(buildingId),
+      ]);
+      releases.value = releaseList.items;
+      regressionCases.value = regressionList.items;
     }
-    activeFloorId.value = workspace.value.floors[0]?.id ?? "";
-    activeConnectorId.value =
-      workspace.value.graph.connectors[0]?.id ?? null;
-    rightTab.value = "properties";
-    dirty.value = false;
-    renderRevision.value += 1;
+    const release = preferredRelease(preferredReleaseId);
+    if (!release) {
+      throw new ApiError(
+        "当前楼栋没有可维护的地图版本。",
+        404,
+        "NO_RELEASE",
+      );
+    }
+    if (demoMode.value) {
+      const nextWorkspace =
+        demoWorkspaces.get(release.id) ??
+        demoAdminWorkspace(release.id);
+      applyWorkspace(
+        cloneWorkspace(nextWorkspace),
+        String(nextWorkspace.release.contentRevision),
+      );
+    } else {
+      const result = await client.loadWorkspace(release.id);
+      applyWorkspace(result.workspace, result.etag);
+    }
   } catch (caught) {
     error.value =
       caught instanceof ApiError ? caught.message : "地图工作区加载失败。";
@@ -215,7 +328,44 @@ async function load(): Promise<void> {
 
 function useDemo(): void {
   demoMode.value = true;
+  demoInitialized.value = false;
+  releases.value = [];
+  regressionCases.value = [];
+  demoWorkspaces.clear();
   void load();
+}
+
+async function switchRelease(releaseId: string): Promise<void> {
+  if (!workspace.value || releaseId === workspace.value.release.id) {
+    return;
+  }
+  if (
+    dirty.value &&
+    !window.confirm("当前版本有未保存修改，确认放弃并切换版本？")
+  ) {
+    return;
+  }
+  busy.value = true;
+  try {
+    if (demoMode.value) {
+      const nextWorkspace =
+        demoWorkspaces.get(releaseId) ??
+        demoAdminWorkspace(releaseId);
+      applyWorkspace(
+        cloneWorkspace(nextWorkspace),
+        String(nextWorkspace.release.contentRevision),
+      );
+    } else {
+      const result = await client.loadWorkspace(releaseId);
+      applyWorkspace(result.workspace, result.etag);
+    }
+  } catch (caught) {
+    showToast(
+      caught instanceof ApiError ? caught.message : "地图版本切换失败。",
+    );
+  } finally {
+    busy.value = false;
+  }
 }
 
 function changeFloor(floorId: string): void {
@@ -233,8 +383,19 @@ function chooseTool(nextTool: EditorTool): void {
   }
 }
 
+function invalidateReleaseValidation(): void {
+  releaseValidation.value = null;
+  for (const summary of releases.value.filter(
+    (item) => item.status === "draft",
+  )) {
+    summary.validationPassed = null;
+    summary.validatedRevision = null;
+  }
+}
+
 function changed(message?: string): void {
   dirty.value = true;
+  invalidateReleaseValidation();
   renderRevision.value += 1;
   if (message) {
     showToast(message);
@@ -731,24 +892,475 @@ function updateSelected(): void {
   changed();
 }
 
-async function save(): Promise<void> {
-  if (!workspace.value || !dirty.value || !editable.value) {
+function updateCurrentReleaseSummary(
+  patch: Partial<ReleaseListItem>,
+): void {
+  if (!workspace.value) {
     return;
   }
-  const blockingIssues = connectorIssues.value.filter(
-    (issue) => issue.blockingSave,
+  const summary = releases.value.find(
+    (item) => item.id === workspace.value?.release.id,
   );
-  if (blockingIssues.length) {
-    rightTab.value = "validation";
-    showToast(`有 ${blockingIssues.length} 个跨层结构问题阻止保存`);
+  if (summary) {
+    Object.assign(summary, patch);
+  }
+}
+
+function openCreateDraftDialog(): void {
+  releaseDialogs.value?.openDraft();
+}
+
+function openPublishDialog(): void {
+  if (
+    workspace.value &&
+    canPublishRelease(
+      workspace.value.release,
+      releaseValidation.value,
+      dirty.value,
+      busy.value,
+    )
+  ) {
+    releaseDialogs.value?.openPublish();
+  }
+}
+
+function openRollbackDialog(): void {
+  if (
+    workspace.value &&
+    canRollbackRelease(
+      workspace.value.release.id,
+      releases.value,
+      busy.value,
+    )
+  ) {
+    releaseDialogs.value?.openRollback();
+  }
+}
+
+function openDiscardDialog(): void {
+  if (workspace.value?.release.status === "draft" && !busy.value) {
+    releaseDialogs.value?.openDiscard();
+  }
+}
+
+async function createDraft(request: CreateDraftRequest): Promise<void> {
+  busy.value = true;
+  try {
+    if (demoMode.value) {
+      const active = releases.value.find(
+        (item) => item.status === "published" && item.active,
+      );
+      if (!active) {
+        throw new ApiError(
+          "没有可复制的当前发布版本。",
+          409,
+          "NO_ACTIVE_RELEASE",
+        );
+      }
+      const source =
+        demoWorkspaces.get(active.id) ?? demoAdminWorkspace(active.id);
+      const createdAt = new Date().toISOString();
+      const releaseId = crypto.randomUUID();
+      const nextWorkspace = cloneWorkspace(source);
+      nextWorkspace.release = {
+        id: releaseId,
+        code: request.code,
+        status: "draft",
+        contentRevision: 0,
+        basedOnReleaseId: active.id,
+        description: request.description,
+        createdBy: "local-admin",
+        createdAt,
+        publishedBy: null,
+        publishedAt: null,
+      };
+      releases.value.unshift({
+        ...nextWorkspace.release,
+        active: false,
+        validationPassed: null,
+        validatedRevision: null,
+      });
+      demoWorkspaces.set(releaseId, cloneWorkspace(nextWorkspace));
+      releaseDialogs.value?.closeDraft();
+      applyWorkspace(nextWorkspace, "0");
+      showToast(`草稿 ${request.code} 已创建`);
+      return;
+    }
+    const result = await client.createDraft(buildingId, request);
+    const releaseList = await client.listReleases(buildingId);
+    releases.value = releaseList.items;
+    releaseDialogs.value?.closeDraft();
+    applyWorkspace(result.workspace, result.etag);
+    showToast(`草稿 ${result.workspace.release.code} 已创建`);
+  } catch (caught) {
+    showToast(
+      caught instanceof ApiError ? caught.message : "草稿创建失败。",
+    );
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function discardDraft(): Promise<void> {
+  if (!workspace.value || workspace.value.release.status !== "draft") {
+    return;
+  }
+  const releaseId = workspace.value.release.id;
+  busy.value = true;
+  try {
+    if (demoMode.value) {
+      demoWorkspaces.delete(releaseId);
+      releases.value = releases.value.filter(
+        (item) => item.id !== releaseId,
+      );
+    } else {
+      await client.deleteDraft(releaseId, etag.value);
+      releases.value = (
+        await client.listReleases(buildingId)
+      ).items;
+    }
+    releaseDialogs.value?.closeDiscard();
+    const nextRelease = preferredRelease();
+    if (!nextRelease) {
+      throw new ApiError(
+        "删除草稿后没有可读取的发布版本。",
+        404,
+        "NO_RELEASE",
+      );
+    }
+    if (demoMode.value) {
+      const nextWorkspace =
+        demoWorkspaces.get(nextRelease.id) ??
+        demoAdminWorkspace(nextRelease.id);
+      applyWorkspace(
+        cloneWorkspace(nextWorkspace),
+        String(nextWorkspace.release.contentRevision),
+      );
+    } else {
+      const result = await client.loadWorkspace(nextRelease.id);
+      applyWorkspace(result.workspace, result.etag);
+    }
+    showToast("草稿已删除，发布版本未受影响");
+  } catch (caught) {
+    showToast(
+      caught instanceof ApiError ? caught.message : "草稿删除失败。",
+    );
+  } finally {
+    busy.value = false;
+  }
+}
+
+function openRegressionCase(caseId?: string): void {
+  const regressionCase =
+    regressionCases.value.find((item) => item.id === caseId) ?? null;
+  regressionDialog.value?.open(regressionCase);
+}
+
+async function saveRegressionCase(
+  caseId: string | null,
+  payload: RouteRegressionCasePayload,
+): Promise<void> {
+  busy.value = true;
+  try {
+    if (demoMode.value) {
+      const now = new Date().toISOString();
+      if (caseId) {
+        const existing = regressionCases.value.find(
+          (item) => item.id === caseId,
+        );
+        if (!existing) {
+          throw new ApiError(
+            "关键路线不存在。",
+            404,
+            "REGRESSION_CASE_NOT_FOUND",
+          );
+        }
+        Object.assign(existing, payload, {
+          updatedBy: "local-admin",
+          updatedAt: now,
+        });
+      } else {
+        if (
+          regressionCases.value.some(
+            (item) =>
+              item.code.toUpperCase() === payload.code.toUpperCase(),
+          )
+        ) {
+          throw new ApiError(
+            "关键路线编码不能重复。",
+            409,
+            "REGRESSION_CASE_CODE_DUPLICATE",
+          );
+        }
+        regressionCases.value.push({
+          id: crypto.randomUUID(),
+          ...payload,
+          createdBy: "local-admin",
+          createdAt: now,
+          updatedBy: "local-admin",
+          updatedAt: now,
+        });
+      }
+    } else if (caseId) {
+      await client.updateRouteRegressionCase(caseId, payload);
+      regressionCases.value = (
+        await client.listRouteRegressionCases(buildingId)
+      ).items;
+    } else {
+      await client.createRouteRegressionCase(buildingId, payload);
+      regressionCases.value = (
+        await client.listRouteRegressionCases(buildingId)
+      ).items;
+    }
+    invalidateReleaseValidation();
+    regressionDialog.value?.close();
+    showToast(caseId ? "关键路线已更新" : "关键路线已新增");
+  } catch (caught) {
+    showToast(
+      caught instanceof ApiError ? caught.message : "关键路线保存失败。",
+    );
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function deleteRegressionCase(caseId: string): Promise<void> {
+  const regressionCase = regressionCases.value.find(
+    (item) => item.id === caseId,
+  );
+  if (
+    !regressionCase ||
+    !window.confirm(`确认删除关键路线“${regressionCase.name}”？`)
+  ) {
     return;
   }
   busy.value = true;
   try {
     if (demoMode.value) {
+      regressionCases.value = regressionCases.value.filter(
+        (item) => item.id !== caseId,
+      );
+    } else {
+      await client.deleteRouteRegressionCase(caseId);
+      regressionCases.value = (
+        await client.listRouteRegressionCases(buildingId)
+      ).items;
+    }
+    invalidateReleaseValidation();
+    showToast("关键路线已删除");
+  } catch (caught) {
+    showToast(
+      caught instanceof ApiError ? caught.message : "关键路线删除失败。",
+    );
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function validateDraft(): Promise<void> {
+  if (!workspace.value || workspace.value.release.status !== "draft") {
+    return;
+  }
+  if (dirty.value && !(await save())) {
+    return;
+  }
+  busy.value = true;
+  try {
+    if (demoMode.value) {
+      releaseValidation.value = demoValidation(
+        workspace.value,
+        regressionCases.value,
+      );
+    } else {
+      const result = await client.validateRelease(
+        workspace.value.release.id,
+        etag.value,
+      );
+      releaseValidation.value = result.validation;
+      etag.value = result.etag;
+    }
+    updateCurrentReleaseSummary({
+      validationPassed: releaseValidation.value.passed,
+      validatedRevision: releaseValidation.value.contentRevision,
+    });
+    rightTab.value = "publication";
+    showToast(
+      releaseValidation.value.passed
+        ? "发布校验和关键路线回归通过"
+        : `校验发现 ${releaseValidation.value.errors.length} 个错误`,
+    );
+  } catch (caught) {
+    showToast(
+      caught instanceof ApiError ? caught.message : "发布校验失败。",
+    );
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function publishDraft(reason: string): Promise<void> {
+  if (
+    !workspace.value ||
+    !canPublishRelease(
+      workspace.value.release,
+      releaseValidation.value,
+      dirty.value,
+      busy.value,
+    )
+  ) {
+    return;
+  }
+  const releaseId = workspace.value.release.id;
+  busy.value = true;
+  try {
+    if (demoMode.value) {
+      for (const item of releases.value.filter(
+        (release) => release.status === "published",
+      )) {
+        item.active = false;
+      }
+      const publishedAt = new Date().toISOString();
+      workspace.value.release.status = "published";
+      workspace.value.release.publishedBy = "local-admin";
+      workspace.value.release.publishedAt = publishedAt;
+      updateCurrentReleaseSummary({
+        status: "published",
+        active: true,
+        publishedBy: "local-admin",
+        publishedAt,
+        validationPassed: true,
+        validatedRevision: workspace.value.release.contentRevision,
+      });
+      demoWorkspaces.set(releaseId, cloneWorkspace(workspace.value));
+      releaseDialogs.value?.closePublish();
+      rightTab.value = "publication";
+      showToast(`版本 ${workspace.value.release.code} 已在演示会话中发布`);
+      return;
+    }
+    const context = await client.publishRelease(
+      releaseId,
+      etag.value,
+      reason,
+    );
+    releaseDialogs.value?.closePublish();
+    await load(context.release.id);
+    showToast(`版本 ${context.release.code} 已发布`);
+  } catch (caught) {
+    showToast(
+      caught instanceof ApiError ? caught.message : "版本发布失败。",
+    );
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function rollbackRelease(reason: string): Promise<void> {
+  if (
+    !workspace.value ||
+    !canRollbackRelease(
+      workspace.value.release.id,
+      releases.value,
+      busy.value,
+    )
+  ) {
+    return;
+  }
+  const releaseId = workspace.value.release.id;
+  busy.value = true;
+  try {
+    if (demoMode.value) {
+      for (const item of releases.value.filter(
+        (release) => release.status === "published",
+      )) {
+        item.active = item.id === releaseId;
+      }
+      releaseDialogs.value?.closeRollback();
+      rightTab.value = "publication";
+      showToast(`已在演示会话中回滚启用 ${workspace.value.release.code}`);
+      return;
+    }
+    const context = await client.rollbackRelease(releaseId, reason);
+    releaseDialogs.value?.closeRollback();
+    await load(context.release.id);
+    showToast(`已回滚启用版本 ${context.release.code}`);
+  } catch (caught) {
+    showToast(
+      caught instanceof ApiError ? caught.message : "版本回滚失败。",
+    );
+  } finally {
+    busy.value = false;
+  }
+}
+
+function navigateValidationIssue(issue: ValidationIssue): void {
+  if (issue.elementType === "route_regression_case") {
+    openRegressionCase(issue.elementId);
+    return;
+  }
+  if (!workspace.value) {
+    return;
+  }
+  const nextSelection = selectionForValidationIssue(issue);
+  if (!nextSelection) {
+    showToast(issue.message);
+    return;
+  }
+  const object = selectedObject(workspace.value.graph, nextSelection);
+  let floorId =
+    object && "floorId" in object ? String(object.floorId) : null;
+  if (nextSelection.kind === "link") {
+    const link = workspace.value.graph.verticalLinks.find(
+      (item) => item.id === nextSelection.id,
+    );
+    floorId =
+      workspace.value.graph.connectorStops.find(
+        (stop) => stop.id === link?.fromStopId,
+      )?.floorId ?? null;
+  }
+  if (floorId) {
+    activeFloorId.value = floorId;
+    edgeStartId.value = null;
+  }
+  select(nextSelection);
+  rightTab.value = "properties";
+}
+
+async function save(): Promise<boolean> {
+  if (
+    !workspace.value ||
+    workspace.value.release.status !== "draft" ||
+    busy.value
+  ) {
+    return false;
+  }
+  if (!dirty.value) {
+    return true;
+  }
+  const blockingIssues = connectorIssues.value.filter(
+    (issue) => issue.blockingSave,
+  );
+  if (blockingIssues.length) {
+    rightTab.value = "relations";
+    showToast(`有 ${blockingIssues.length} 个跨层结构问题阻止保存`);
+    return false;
+  }
+  busy.value = true;
+  try {
+    if (demoMode.value) {
+      workspace.value.release.contentRevision += 1;
+      etag.value = String(workspace.value.release.contentRevision);
+      updateCurrentReleaseSummary({
+        contentRevision: workspace.value.release.contentRevision,
+        validationPassed: null,
+        validatedRevision: null,
+      });
+      demoWorkspaces.set(
+        workspace.value.release.id,
+        cloneWorkspace(workspace.value),
+      );
       dirty.value = false;
       showToast("演示模式已在浏览器内保存，不写入后端");
-      return;
+      return true;
     }
     const result = await client.saveWorkspace(
       workspace.value.release.id,
@@ -757,13 +1369,21 @@ async function save(): Promise<void> {
     );
     workspace.value = result.workspace;
     etag.value = result.etag;
+    updateCurrentReleaseSummary({
+      contentRevision: result.workspace.release.contentRevision,
+      description: result.workspace.release.description,
+      validationPassed: null,
+      validatedRevision: null,
+    });
     dirty.value = false;
     renderRevision.value += 1;
     showToast(`草稿修订 ${workspace.value.release.contentRevision} 已保存`);
+    return true;
   } catch (caught) {
     showToast(
       caught instanceof ApiError ? caught.message : "草稿保存失败。",
     );
+    return false;
   } finally {
     busy.value = false;
   }
@@ -813,7 +1433,7 @@ onMounted(load);
           type="button"
           title="重新加载"
           :disabled="busy"
-          @click="load"
+          @click="load()"
         >
           <RefreshCw :size="16" :class="{ 'animate-spin': busy }" />
           <span class="sr-only">重新加载</span>
@@ -832,28 +1452,21 @@ onMounted(load);
 
     <main
       v-if="workspace && activeFloor"
-      class="grid min-h-0 grid-cols-[224px_minmax(0,1fr)_288px]"
+      class="grid min-h-0 grid-cols-[224px_minmax(0,1fr)_340px]"
     >
       <aside
         class="min-h-0 overflow-y-auto border-r border-[#d7dce2] bg-white"
         aria-label="地图编辑控制"
       >
-        <section class="border-b border-[#e4e7eb] p-4">
-          <p class="mb-2 text-xs font-semibold text-[#344054]">工作版本</p>
-          <div class="rounded-md border border-[#d7dce2] bg-[#f8fafb] p-3">
-            <div class="flex items-center justify-between gap-2">
-              <strong class="truncate text-xs">{{ workspace.release.code }}</strong>
-              <span
-                class="rounded-sm bg-[#dff3f2] px-1.5 py-0.5 text-[11px] font-semibold text-[#066d77]"
-                >草稿</span
-              >
-            </div>
-            <p class="mt-1 text-[11px] leading-4 text-[#667085]">
-              修订 {{ workspace.release.contentRevision }}
-              <span v-if="dirty" class="font-semibold text-[#b45309]"> · 未保存</span>
-            </p>
-          </div>
-        </section>
+        <ReleasePanel
+          :release="workspace.release"
+          :releases="releases"
+          :dirty="dirty"
+          :busy="busy"
+          @select-release="switchRelease"
+          @create-draft="openCreateDraftDialog"
+          @discard-draft="openDiscardDialog"
+        />
 
         <section class="border-b border-[#e4e7eb] p-4">
           <p class="mb-2 text-xs font-semibold text-[#344054]">楼层</p>
@@ -990,10 +1603,10 @@ onMounted(load);
 
       <aside
         class="min-h-0 overflow-y-auto border-l border-[#d7dce2] bg-white"
-        aria-label="元素属性和跨层关系检查"
+        aria-label="元素属性、跨层关系和发布工作台"
       >
         <div
-          class="grid h-11 grid-cols-2 border-b border-[#d7dce2] bg-[#f8fafb] px-2"
+          class="grid h-11 grid-cols-3 border-b border-[#d7dce2] bg-[#f8fafb] px-2"
           role="tablist"
           aria-label="右侧面板"
         >
@@ -1018,16 +1631,16 @@ onMounted(load);
           <button
             class="relative flex items-center justify-center gap-1.5 text-xs font-semibold"
             :class="
-              rightTab === 'validation'
+              rightTab === 'relations'
                 ? 'text-[#066d77]'
                 : 'text-[#667085]'
             "
             type="button"
             role="tab"
-            :aria-selected="rightTab === 'validation'"
-            @click="rightTab = 'validation'"
+            :aria-selected="rightTab === 'relations'"
+            @click="rightTab = 'relations'"
           >
-            关系检查
+            关系
             <span
               v-if="connectorErrorCount"
               class="grid min-w-4 place-items-center rounded-sm bg-[#fee2e2] px-1 text-[10px] leading-4 text-[#b91c1c]"
@@ -1035,7 +1648,31 @@ onMounted(load);
               {{ connectorErrorCount }}
             </span>
             <span
-              v-if="rightTab === 'validation'"
+              v-if="rightTab === 'relations'"
+              class="absolute inset-x-3 bottom-0 h-0.5 bg-[#087f8c]"
+            ></span>
+          </button>
+          <button
+            class="relative flex items-center justify-center gap-1.5 text-xs font-semibold"
+            :class="
+              rightTab === 'publication'
+                ? 'text-[#066d77]'
+                : 'text-[#667085]'
+            "
+            type="button"
+            role="tab"
+            :aria-selected="rightTab === 'publication'"
+            @click="rightTab = 'publication'"
+          >
+            发布
+            <span
+              v-if="publicationIssueCount"
+              class="grid min-w-4 place-items-center rounded-sm bg-[#fee2e2] px-1 text-[10px] leading-4 text-[#b91c1c]"
+            >
+              {{ publicationIssueCount }}
+            </span>
+            <span
+              v-if="rightTab === 'publication'"
               class="absolute inset-x-3 bottom-0 h-0.5 bg-[#087f8c]"
             ></span>
           </button>
@@ -1229,10 +1866,27 @@ onMounted(load);
           </template>
 
           <ConnectorValidation
-            v-else
+            v-else-if="rightTab === 'relations'"
             :issues="connectorIssues"
             :floors="workspace.floors"
             @navigate="navigateIssue"
+          />
+
+          <PublicationWorkbench
+            v-else
+            :release="workspace.release"
+            :releases="releases"
+            :validation="releaseValidation"
+            :regression-cases="regressionCases"
+            :dirty="dirty"
+            :busy="busy"
+            @validate="validateDraft"
+            @publish="openPublishDialog"
+            @rollback="openRollbackDialog"
+            @create-case="openRegressionCase()"
+            @edit-case="openRegressionCase"
+            @delete-case="deleteRegressionCase"
+            @navigate-issue="navigateValidationIssue"
           />
         </div>
       </aside>
@@ -1260,7 +1914,7 @@ onMounted(load);
           <button
             class="h-9 whitespace-nowrap rounded-md bg-[#087f8c] px-3 text-xs font-semibold text-white active:translate-y-px"
             type="button"
-            @click="load"
+            @click="load()"
           >
             重试连接
           </button>
@@ -1274,6 +1928,25 @@ onMounted(load);
         </div>
       </section>
     </main>
+
+    <ReleaseDialogs
+      v-if="workspace"
+      ref="releaseDialogs"
+      :release="workspace.release"
+      :releases="releases"
+      @create-draft="createDraft"
+      @publish="publishDraft"
+      @rollback="rollbackRelease"
+      @discard="discardDraft"
+    />
+
+    <RouteRegressionDialog
+      v-if="workspace"
+      ref="regressionDialog"
+      :graph="workspace.graph"
+      :floors="workspace.floors"
+      @save="saveRegressionCase"
+    />
 
     <dialog
       ref="connectorDialog"
@@ -1327,7 +2000,6 @@ onMounted(load);
             >
               <option value="public">公众可用</option>
               <option value="staff">仅员工</option>
-              <option value="restricted">受限区域</option>
             </select>
           </label>
           <label class="flex items-end gap-2 pb-2 text-xs text-[#344054]">

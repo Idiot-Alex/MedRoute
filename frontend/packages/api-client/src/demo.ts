@@ -1,4 +1,5 @@
 import type {
+  AdminValidation,
   AdminWorkspace,
   Connector,
   ConnectorStop,
@@ -10,10 +11,15 @@ import type {
   PathEdge,
   PathNode,
   Poi,
+  ReleaseListItem,
+  ReleaseListResponse,
+  RouteRegressionCase,
+  RouteRegressionResult,
   RoutePoint,
   RouteSegment,
   VerticalLink,
 } from "@medroute/map-core";
+import { validateConnectorRelations } from "@medroute/map-core";
 
 const building = {
   id: "00000000-0000-0000-0000-000000000100",
@@ -123,24 +129,187 @@ const graph: DraftGraph = {
   verticalLinks,
 };
 
-export function demoAdminWorkspace(): AdminWorkspace {
+const releaseItems: ReleaseListItem[] = [
+  {
+    id: id("5001"),
+    code: "PILOT-OPENLAYERS",
+    status: "draft",
+    active: false,
+    contentRevision: 0,
+    basedOnReleaseId: id("5000"),
+    description: "调整跨层设施并复核关键路线。",
+    createdBy: "fixture",
+    createdAt: "2026-07-26T08:30:00Z",
+    publishedBy: null,
+    publishedAt: null,
+    validationPassed: null,
+    validatedRevision: null,
+  },
+  {
+    id: id("5000"),
+    code: "REL-DEMO-OPENLAYERS",
+    status: "published",
+    active: true,
+    contentRevision: 3,
+    basedOnReleaseId: id("4999"),
+    description: "当前移动导航使用版本。",
+    createdBy: "fixture",
+    createdAt: "2026-07-25T08:00:00Z",
+    publishedBy: "fixture",
+    publishedAt: "2026-07-26T08:00:00Z",
+    validationPassed: true,
+    validatedRevision: 3,
+  },
+  {
+    id: id("4999"),
+    code: "REL-DEMO-PREVIOUS",
+    status: "published",
+    active: false,
+    contentRevision: 2,
+    basedOnReleaseId: null,
+    description: "上一版现场地图。",
+    createdBy: "fixture",
+    createdAt: "2026-07-20T08:00:00Z",
+    publishedBy: "fixture",
+    publishedAt: "2026-07-21T08:00:00Z",
+    validationPassed: true,
+    validatedRevision: 2,
+  },
+];
+
+const regressionCases: RouteRegressionCase[] = [
+  {
+    id: id("6001"),
+    code: "ENTRANCE-TO-PHARMACY",
+    name: "入口到门诊药房",
+    startPoiCode: "P-ENTRANCE",
+    endPoiCode: "P-PHARMACY",
+    routeMode: "normal",
+    critical: true,
+    enabled: true,
+    maxDistanceMeters: 60,
+    maxEstimatedSeconds: 120,
+    createdBy: "fixture",
+    createdAt: "2026-07-26T08:00:00Z",
+    updatedBy: "fixture",
+    updatedAt: "2026-07-26T08:00:00Z",
+  },
+  {
+    id: id("6002"),
+    code: "ENTRANCE-TO-LAB-ACCESSIBLE",
+    name: "入口到检验科无障碍路线",
+    startPoiCode: "P-ENTRANCE",
+    endPoiCode: "P-LAB",
+    routeMode: "accessible",
+    critical: true,
+    enabled: true,
+    maxDistanceMeters: 120,
+    maxEstimatedSeconds: 180,
+    createdBy: "fixture",
+    createdAt: "2026-07-26T08:00:00Z",
+    updatedBy: "fixture",
+    updatedAt: "2026-07-26T08:00:00Z",
+  },
+];
+
+export function demoReleaseList(): ReleaseListResponse {
+  return structuredClone({
+    items: releaseItems,
+    nextPageToken: null,
+  });
+}
+
+export function demoRouteRegressionCases(): RouteRegressionCase[] {
+  return structuredClone(regressionCases);
+}
+
+export function demoAdminWorkspace(releaseId = id("5001")): AdminWorkspace {
+  const summary =
+    releaseItems.find((item) => item.id === releaseId) ?? releaseItems[0]!;
   return structuredClone({
     building,
     release: {
-      id: id("5001"),
-      code: "PILOT-OPENLAYERS",
-      status: "draft",
-      contentRevision: 0,
-      basedOnReleaseId: null,
-      description: "OpenLayers 前端验证数据，不用于现场导诊。",
-      createdBy: "fixture",
-      createdAt: "2026-07-26T08:00:00Z",
-      publishedBy: null,
-      publishedAt: null,
+      id: summary.id,
+      code: summary.code,
+      status: summary.status,
+      contentRevision: summary.contentRevision,
+      basedOnReleaseId: summary.basedOnReleaseId,
+      description: summary.description,
+      createdBy: summary.createdBy,
+      createdAt: summary.createdAt,
+      publishedBy: summary.publishedBy,
+      publishedAt: summary.publishedAt,
     },
     floors,
     graph,
   });
+}
+
+export function demoValidation(
+  workspace: AdminWorkspace,
+  cases: RouteRegressionCase[],
+): AdminValidation {
+  const errors = validateConnectorRelations(
+    workspace.graph,
+    workspace.floors,
+  )
+    .filter((item) => item.severity === "error")
+    .map((item) => ({
+      code: item.code,
+      elementType: {
+        connector: "vertical_connector",
+        stop: "connector_stop",
+        link: "vertical_link",
+      }[item.elementKind],
+      elementId: item.elementId,
+      message: item.message,
+    }));
+  for (const node of workspace.graph.nodes.filter((item) => item.enabled)) {
+    const connected = workspace.graph.edges.some(
+      (edge) =>
+        edge.enabled &&
+        (edge.fromNodeId === node.id || edge.toNodeId === node.id),
+    );
+    if (!connected) {
+      errors.push({
+        code: "ISOLATED_NODE",
+        elementType: "path_node",
+        elementId: node.id,
+        message: `${node.code} 没有连接任何启用路径。`,
+      });
+    }
+  }
+
+  const enabledCases = cases.filter((item) => item.enabled);
+  const routeRegressions = enabledCases.map((item) =>
+    demoRegressionResult(workspace, item),
+  );
+  const warnings = [];
+  if (!enabledCases.length) {
+    warnings.push({
+      code: "NO_ROUTE_REGRESSION_CASE",
+      elementType: "release",
+      elementId: workspace.release.id,
+      message: "当前楼栋尚未配置启用的关键路线回归用例。",
+    });
+  }
+  for (const result of routeRegressions.filter((item) => !item.passed)) {
+    const target = result.critical ? errors : warnings;
+    target.push({
+      code: `ROUTE_REGRESSION_${result.resultCode}`,
+      elementType: "route_regression_case",
+      elementId: result.caseId,
+      message: `${result.caseName}：${result.message}`,
+    });
+  }
+  return {
+    releaseId: workspace.release.id,
+    contentRevision: workspace.release.contentRevision,
+    passed: errors.length === 0,
+    errors,
+    warnings,
+    routeRegressions,
+  };
 }
 
 export function demoNavigationContext(): NavigationContext {
@@ -154,6 +323,64 @@ export function demoNavigationContext(): NavigationContext {
     floors,
     supportedRouteModes: ["normal", "accessible"],
   });
+}
+
+function demoRegressionResult(
+  workspace: AdminWorkspace,
+  regressionCase: RouteRegressionCase,
+): RouteRegressionResult {
+  const start = workspace.graph.pois.find(
+    (item) => item.enabled && item.code === regressionCase.startPoiCode,
+  );
+  const end = workspace.graph.pois.find(
+    (item) => item.enabled && item.code === regressionCase.endPoiCode,
+  );
+  if (!start || !end) {
+    return {
+      caseId: regressionCase.id,
+      caseCode: regressionCase.code,
+      caseName: regressionCase.name,
+      routeMode: regressionCase.routeMode,
+      critical: regressionCase.critical,
+      startPoiCode: regressionCase.startPoiCode,
+      startPoiName: start?.name ?? null,
+      endPoiCode: regressionCase.endPoiCode,
+      endPoiName: end?.name ?? null,
+      passed: false,
+      resultCode: "POI_NOT_FOUND",
+      distanceMeters: null,
+      estimatedSeconds: null,
+      connectorCodes: [],
+      message: "当前草稿中找不到回归路线使用的已启用 POI。",
+    };
+  }
+  const crossFloor = start.floorId !== end.floorId;
+  const distanceMeters = crossFloor ? 72 : 36;
+  const estimatedSeconds = crossFloor ? 105 : 40;
+  const exceeded =
+    (regressionCase.maxDistanceMeters != null &&
+      distanceMeters > regressionCase.maxDistanceMeters) ||
+    (regressionCase.maxEstimatedSeconds != null &&
+      estimatedSeconds > regressionCase.maxEstimatedSeconds);
+  return {
+    caseId: regressionCase.id,
+    caseCode: regressionCase.code,
+    caseName: regressionCase.name,
+    routeMode: regressionCase.routeMode,
+    critical: regressionCase.critical,
+    startPoiCode: regressionCase.startPoiCode,
+    startPoiName: start.name,
+    endPoiCode: regressionCase.endPoiCode,
+    endPoiName: end.name,
+    passed: !exceeded,
+    resultCode: exceeded ? "LIMIT_EXCEEDED" : "PASSED",
+    distanceMeters,
+    estimatedSeconds,
+    connectorCodes: crossFloor ? ["ELEV-B"] : [],
+    message: exceeded
+      ? "演示路线超过配置的距离或耗时上限。"
+      : "路线可达并符合配置限制。",
+  };
 }
 
 export function demoNavigationPois(): NavigationPoi[] {

@@ -1,10 +1,14 @@
 import type {
+  AdminValidation,
   AdminWorkspace,
   DraftGraph,
   NavigationContext,
   NavigationPoiSearchResponse,
   NavigationRoute,
   ReleaseListResponse,
+  RouteRegressionCase,
+  RouteRegressionCaseListResponse,
+  RouteRegressionCasePayload,
 } from "@medroute/map-core";
 
 export interface ApiClientOptions {
@@ -15,6 +19,17 @@ export interface ApiClientOptions {
 export interface WorkspaceResult {
   workspace: AdminWorkspace;
   etag: string;
+}
+
+export interface ValidationResult {
+  validation: AdminValidation;
+  etag: string;
+}
+
+export interface CreateDraftRequest {
+  code: string;
+  basedOnReleaseId: string;
+  description: string;
 }
 
 export interface RouteRequest {
@@ -113,6 +128,134 @@ export class MedRouteApiClient {
         response.headers.get("ETag") ??
         String(body.release.contentRevision),
     };
+  }
+
+  async createDraft(
+    buildingId: string,
+    request: CreateDraftRequest,
+  ): Promise<WorkspaceResult> {
+    const { body, response } = await this.request<AdminWorkspace>(
+      `/api/admin/buildings/${buildingId}/releases/drafts`,
+      {
+        admin: true,
+        method: "POST",
+        body: JSON.stringify(request),
+      },
+    );
+    return {
+      workspace: body,
+      etag:
+        response.headers.get("ETag") ??
+        String(body.release.contentRevision),
+    };
+  }
+
+  async deleteDraft(releaseId: string, etag: string): Promise<void> {
+    await this.request<void>(`/api/admin/releases/${releaseId}`, {
+      admin: true,
+      method: "DELETE",
+      headers: { "If-Match": etag },
+    });
+  }
+
+  async validateRelease(
+    releaseId: string,
+    etag: string,
+  ): Promise<ValidationResult> {
+    const { body, response } = await this.request<AdminValidation>(
+      `/api/admin/releases/${releaseId}/validate`,
+      {
+        admin: true,
+        method: "POST",
+        headers: { "If-Match": etag },
+      },
+    );
+    return {
+      validation: body,
+      etag: response.headers.get("ETag") ?? String(body.contentRevision),
+    };
+  }
+
+  async publishRelease(
+    releaseId: string,
+    etag: string,
+    reason: string,
+  ): Promise<NavigationContext> {
+    const { body } = await this.request<NavigationContext>(
+      `/api/admin/releases/${releaseId}/publish`,
+      {
+        admin: true,
+        method: "POST",
+        headers: { "If-Match": etag },
+        body: JSON.stringify({ reason }),
+      },
+    );
+    return body;
+  }
+
+  async rollbackRelease(
+    releaseId: string,
+    reason: string,
+  ): Promise<NavigationContext> {
+    const { body } = await this.request<NavigationContext>(
+      `/api/admin/releases/${releaseId}/rollback`,
+      {
+        admin: true,
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      },
+    );
+    return body;
+  }
+
+  async listRouteRegressionCases(
+    buildingId: string,
+  ): Promise<RouteRegressionCaseListResponse> {
+    const { body } = await this.request<RouteRegressionCaseListResponse>(
+      `/api/admin/buildings/${buildingId}/route-regression-cases`,
+      { admin: true },
+    );
+    return body;
+  }
+
+  async createRouteRegressionCase(
+    buildingId: string,
+    payload: RouteRegressionCasePayload,
+  ): Promise<RouteRegressionCase> {
+    const { body } = await this.request<RouteRegressionCase>(
+      `/api/admin/buildings/${buildingId}/route-regression-cases`,
+      {
+        admin: true,
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+    return body;
+  }
+
+  async updateRouteRegressionCase(
+    caseId: string,
+    payload: RouteRegressionCasePayload,
+  ): Promise<RouteRegressionCase> {
+    const { body } = await this.request<RouteRegressionCase>(
+      `/api/admin/route-regression-cases/${caseId}`,
+      {
+        admin: true,
+        method: "PUT",
+        body: JSON.stringify(payload),
+      },
+    );
+    return body;
+  }
+
+  async deleteRouteRegressionCase(caseId: string): Promise<void> {
+    await this.request<void>(
+      `/api/admin/route-regression-cases/${caseId}`,
+      {
+        admin: true,
+        method: "DELETE",
+      },
+    );
   }
 
   async navigationContext(buildingId: string): Promise<NavigationContext> {
