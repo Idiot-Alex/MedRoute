@@ -126,6 +126,17 @@ Surefire 会为二维码图像测试启用 Java headless 模式，测试过程�
 - 公开底图试点草稿全部 POI 的普通/无障碍可达性和 12 条关键路线。
 
 本地验收还应使用 Docker PostgreSQL 运行后端并在浏览器完成一次发布/回滚闭环。
+后端运行时，可在仓库根目录执行真实 PostgreSQL API 冒烟：
+
+```bash
+MEDROUTE_EXPECTED_POI_COUNT=30 node scripts/pilot-api-smoke.mjs
+MEDROUTE_EXPECTED_POI_COUNT=30 node scripts/pilot-api-smoke.mjs --write
+```
+
+默认模式只读取当前发布版本，检查上下文/POI/运营版本一致性、全部 POI 普通和
+无障碍可达矩阵及二维码 PNG。`--write` 还会自动选择一条当前路线使用的开放
+电梯或楼梯，创建即时封闭，验证绕行或明确不可达，再撤销封闭并确认原基线恢复。
+该模式保留已撤销的运营审计记录，不会修改地图发布版本。
 
 ## 安全边界
 

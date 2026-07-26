@@ -95,10 +95,12 @@ const BasicGraphInspector = defineAsyncComponent(
 );
 
 const params = new URLSearchParams(window.location.search);
-const apiBase = (params.get("api") ?? "http://127.0.0.1:8080").replace(
-  /\/$/,
-  "",
-);
+const apiBase = (
+  params.get("api") ??
+  (import.meta.env.DEV
+    ? window.location.origin
+    : "http://127.0.0.1:8080")
+).replace(/\/$/, "");
 const buildingId = params.get("building") ?? DEFAULT_BUILDING_ID;
 const assetBase = params.get("assets") ?? window.location.origin;
 const client = new MedRouteApiClient({ apiBase });

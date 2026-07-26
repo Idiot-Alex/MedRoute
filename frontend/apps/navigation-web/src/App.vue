@@ -35,10 +35,12 @@ import RouteFloorMap from "./components/RouteFloorMap.vue";
 import StepNavigator from "./components/StepNavigator.vue";
 
 const params = new URLSearchParams(window.location.search);
-const apiBase = (params.get("api") ?? "http://127.0.0.1:8080").replace(
-  /\/$/,
-  "",
-);
+const apiBase = (
+  params.get("api") ??
+  (import.meta.env.DEV
+    ? window.location.origin
+    : "http://127.0.0.1:8080")
+).replace(/\/$/, "");
 const assetBase = params.get("assets") ?? window.location.origin;
 const buildingId =
   params.get("building") ??
