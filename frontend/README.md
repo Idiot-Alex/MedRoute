@@ -118,6 +118,9 @@ pnpm build
 MEDROUTE_API_BASE=http://192.168.5.42:5174 \
   MEDROUTE_EXPECTED_POI_COUNT=30 \
   node ../scripts/pilot-api-smoke.mjs --public-only
+MEDROUTE_MAP_IMAGE=/path/to/replacement.jpg \
+  MEDROUTE_FLOOR_CODE=1F \
+  node ../scripts/pilot-authoring-smoke.mjs
 ```
 
 维护端验收 `1200 x 720` 和 `1440 x 900`；导航端验收 `360 x 800`、

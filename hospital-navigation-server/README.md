@@ -144,6 +144,18 @@ MEDROUTE_API_BASE=http://192.168.5.42:5174 \
 该模式保留已撤销的运营审计记录，不会修改地图发布版本。`--public-only` 仅调用
 导航公开 API，适合从局域网地址检查手机访问边界，不能与 `--write` 同时使用。
 
+真实底图文件的草稿编修闭环可在仓库根目录执行：
+
+```bash
+MEDROUTE_MAP_IMAGE=/path/to/replacement.jpg \
+  MEDROUTE_FLOOR_CODE=1F \
+  node scripts/pilot-authoring-smoke.mjs
+```
+
+脚本从当前启用版本复制唯一临时草稿，上传 PNG/JPEG，验证本层节点和 POI 坐标
+缩放、图片字节及缓存头，保存一次图修改并执行完整关键路线校验，最后在成功或失败
+路径删除自己的草稿。它不会发布、回滚或修改当前启用版本。
+
 ## 安全边界
 
 当前维护 API 通过 `X-Admin-User` 记录操作人，但尚未接入 Spring Security，

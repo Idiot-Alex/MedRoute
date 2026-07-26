@@ -85,6 +85,14 @@ pnpm typecheck
 pnpm build
 ```
 
+真实文件草稿编修回归：
+
+```bash
+MEDROUTE_MAP_IMAGE=/path/to/replacement.jpg \
+  MEDROUTE_FLOOR_CODE=1F \
+  node scripts/pilot-authoring-smoke.mjs
+```
+
 真实 PostgreSQL 备份和恢复演练：
 
 ```bash
