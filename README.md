@@ -18,7 +18,8 @@ Flyway                         自动建表和数据库版本迁移
 
 ## 快速启动
 
-准备 JDK 17、Docker Desktop 和 Python 3。在仓库根目录启动数据库：
+准备 JDK 17 和 Docker Desktop；新版前端还需要 Node.js 20 与 pnpm 10，
+兼容静态页面需要 Python 3。在仓库根目录启动数据库：
 
 ```bash
 docker compose up -d postgres
@@ -58,12 +59,13 @@ pnpm dev:navigation
 
 打开：
 
-- 新版地图维护：<http://127.0.0.1:5173/?api=http://127.0.0.1:8080>
-- 新版移动导航：<http://127.0.0.1:5174/?api=http://127.0.0.1:8080>
+- 新版地图维护：<http://127.0.0.1:5173/>
+- 新版移动导航：<http://127.0.0.1:5174/>
 - 无后端演示：在上述地址增加 `&demo=1`，或直接使用 `?demo=1`
 
-新版仍处于增量迁移阶段，旧静态页面继续承担发布校验、运营封闭、二维码和完整
-POI 搜索等尚未迁移的功能。
+同一 Wi-Fi 的手机使用电脑实际 IP 打开导航端，例如
+`http://192.168.5.42:5174/`。未接入登录前，维护端和 Spring Boot 默认只允许
+本机访问；导航端局域网入口仅代理公开 API。
 
 IDEA 可以打开仓库根目录，也可以只打开 `hospital-navigation-server`。运行
 `HospitalNavigationApplication` 前，确认 Project SDK 为 JDK 17 且 PostgreSQL
@@ -83,6 +85,13 @@ pnpm typecheck
 pnpm build
 ```
 
+真实 PostgreSQL 备份和恢复演练：
+
+```bash
+scripts/backup-postgres.sh
+scripts/restore-postgres.sh backups/<backup>.dump medroute_restore_drill
+```
+
 完整的维护、发布、回滚、备份流程见
 [`docs/10-地图维护与发布操作手册.md`](docs/10-地图维护与发布操作手册.md)。
 新版前端架构和迁移范围见
@@ -91,5 +100,5 @@ pnpm build
 ## 当前边界
 
 - 第一份测试数据是一栋三层门急诊楼，底图来自公开医院页面，仅用于开发验证。
-- 当前维护端未接入正式登录和权限系统，只适合本机或受控内网验收。
+- 当前维护端未接入正式登录和权限系统，只适合本机验收。
 - 生产部署前必须增加身份认证、楼栋数据权限、HTTPS、反向代理和定时备份。

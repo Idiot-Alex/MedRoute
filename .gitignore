@@ -9,3 +9,6 @@
 **/.idea/
 *.iml
 .env
+
+# Local PostgreSQL backups
+/backups/
