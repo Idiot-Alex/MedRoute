@@ -11,7 +11,8 @@ This directory contains the phase-one single-floor route guidance demo.
 - `multifloor.js` / `multifloor.css`: backend integration, POI search, deep links,
   step-by-step route browsing, and responsive map tool UI.
 - `admin.html` / `admin.js` / `admin.css`: desktop-first persistent multi-floor map authoring,
-  validation, publishing, rollback, QR-code generation, and operation-closure workspace.
+  critical-route regression, validation, publishing, rollback, QR-code generation, and
+  operation-closure workspace.
 - `assets/hndfsrmyy/`: clearly marked local test floor-plan assets and source notes.
 
 ## Run Locally
@@ -54,7 +55,10 @@ requests to `POST /api/routes`. It does not duplicate route calculation in the b
 The admin page reads and writes release workspaces through `/api/admin`. It edits
 drafts only, uploads a separate PNG/JPEG for each floor, validates before publish,
 can reactivate a historical release, and manages temporary route or connector
-closures. For an enabled POI in the current active release, it can also request a
+closures. Its validation tab maintains building-level regression routes by stable
+POI code and displays reachability, distance, time, and chosen vertical connectors;
+failed critical routes prevent publishing. For an enabled POI in the current active
+release, it can also request a
 fixed-point navigation QR code from `POST /api/admin/navigation-qr-code`, copy its
 business-code deep link, and download the PNG. PostgreSQL and the backend are
 required; admin edits are not kept only in browser memory.

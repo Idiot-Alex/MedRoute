@@ -1,6 +1,7 @@
 package com.medroute.nav.navigation.service;
 
 import com.medroute.nav.dto.AdminReleaseListResponse;
+import com.medroute.nav.dto.AdminRouteRegressionResult;
 import com.medroute.nav.dto.AdminValidationResponse;
 import com.medroute.nav.dto.AdminWorkspaceResponse;
 import com.medroute.nav.dto.CreateDraftRequest;
@@ -8,7 +9,9 @@ import com.medroute.nav.dto.DraftGraphPayload;
 import com.medroute.nav.dto.NavigationContextResponse;
 import com.medroute.nav.dto.PublishReleaseRequest;
 import com.medroute.nav.navigation.repository.JdbcMapAuthoringRepository;
+import com.medroute.nav.navigation.service.RouteRegressionService.RouteRegressionRun;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
@@ -20,6 +23,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Iterator;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -31,15 +36,18 @@ public class MapAuthoringService {
     private final JdbcMapAuthoringRepository repository;
     private final DraftGraphValidator validator;
     private final NavigationContextService contextService;
+    private final RouteRegressionService regressionService;
 
     public MapAuthoringService(
         JdbcMapAuthoringRepository repository,
         DraftGraphValidator validator,
-        NavigationContextService contextService
+        NavigationContextService contextService,
+        RouteRegressionService regressionService
     ) {
         this.repository = repository;
         this.validator = validator;
         this.contextService = contextService;
+        this.regressionService = regressionService;
     }
 
     public AdminReleaseListResponse listReleases(UUID buildingId) {
@@ -109,21 +117,75 @@ public class MapAuthoringService {
         );
     }
 
+    @Transactional
     public AdminValidationResponse validate(
         UUID releaseId,
         long expectedRevision,
         String actor
     ) {
         AdminWorkspaceResponse workspace = repository.workspace(releaseId);
-        AdminValidationResponse validation = validator.validateForPublish(
+        AdminValidationResponse structural = validator.validateForPublish(
             workspace
+        );
+        RouteRegressionRun regressionRun = regressionService.run(workspace);
+        AdminValidationResponse validation = withRouteRegressions(
+            structural,
+            regressionRun.results()
         );
         repository.recordValidation(
             validation,
             expectedRevision,
-            actor(actor)
+            actor(actor),
+            regressionRun.configurationRevision()
         );
         return validation;
+    }
+
+    private AdminValidationResponse withRouteRegressions(
+        AdminValidationResponse structural,
+        List<AdminRouteRegressionResult> results
+    ) {
+        List<AdminValidationResponse.Issue> errors = new ArrayList<>(
+            structural.errors()
+        );
+        List<AdminValidationResponse.Issue> warnings = new ArrayList<>(
+            structural.warnings()
+        );
+        if (results.isEmpty()) {
+            warnings.add(
+                new AdminValidationResponse.Issue(
+                    "NO_ROUTE_REGRESSION_CASE",
+                    "release",
+                    structural.releaseId(),
+                    "当前楼栋尚未配置启用的关键路线回归用例。"
+                )
+            );
+        }
+        for (AdminRouteRegressionResult result : results) {
+            if (result.passed()) {
+                continue;
+            }
+            AdminValidationResponse.Issue issue =
+                new AdminValidationResponse.Issue(
+                    "ROUTE_REGRESSION_" + result.resultCode(),
+                    "route_regression_case",
+                    result.caseId(),
+                    result.caseName() + "：" + result.message()
+                );
+            if (result.critical()) {
+                errors.add(issue);
+            } else {
+                warnings.add(issue);
+            }
+        }
+        return new AdminValidationResponse(
+            structural.releaseId(),
+            structural.contentRevision(),
+            errors.isEmpty(),
+            errors,
+            warnings,
+            results
+        );
     }
 
     public NavigationContextResponse publish(

@@ -9,7 +9,7 @@
   />
   <title>MedRoute 地图维护</title>
   <link rel="icon" href="data:," />
-  <link rel="stylesheet" href="admin.css?v=20260726-16" />
+  <link rel="stylesheet" href="admin.css?v=20260726-17" />
 </head>
 <body>
   <div class="admin-shell">
@@ -205,6 +205,25 @@
         </section>
 
         <section id="validationPanel" role="tabpanel" hidden>
+          <div class="regression-config">
+            <div class="section-heading">
+              <div>
+                <h2>关键路线</h2>
+                <span id="regressionCaseCount">0 条启用</span>
+              </div>
+              <button
+                class="text-button"
+                id="addRegressionCaseButton"
+                type="button"
+              >
+                新增
+              </button>
+            </div>
+            <div
+              class="regression-case-list"
+              id="regressionCaseList"
+            ></div>
+          </div>
           <div class="validation-empty" id="validationContent">
             <strong>尚未执行发布校验</strong>
             <p>保存草稿后运行校验，系统会检查可达性和跨层配置。</p>
@@ -457,6 +476,95 @@
     </div>
   </dialog>
 
+  <dialog id="routeRegressionDialog">
+    <form class="dialog-form" id="routeRegressionForm" method="dialog">
+      <div class="dialog-heading">
+        <h2 id="routeRegressionDialogTitle">新增关键路线</h2>
+        <button
+          class="dialog-close"
+          type="button"
+          data-close-dialog
+          aria-label="关闭"
+        >×</button>
+      </div>
+      <div class="field-row">
+        <label class="field">
+          <span>路线名称</span>
+          <input
+            id="regressionNameInput"
+            maxlength="120"
+            required
+            placeholder="例如：入口到检验科"
+          />
+        </label>
+        <label class="field">
+          <span>路线编码</span>
+          <input
+            id="regressionCodeInput"
+            maxlength="80"
+            required
+            placeholder="ENTRANCE-TO-LAB"
+          />
+        </label>
+      </div>
+      <div class="field-row">
+        <label class="field">
+          <span>起点 POI</span>
+          <select id="regressionStartPoiInput" required></select>
+        </label>
+        <label class="field">
+          <span>目的地 POI</span>
+          <select id="regressionEndPoiInput" required></select>
+        </label>
+      </div>
+      <label class="field">
+        <span>路线模式</span>
+        <select id="regressionRouteModeInput">
+          <option value="normal">普通路线</option>
+          <option value="accessible">无障碍路线</option>
+        </select>
+      </label>
+      <div class="field-row">
+        <label class="field">
+          <span>最大距离（米，可选）</span>
+          <input
+            id="regressionMaxDistanceInput"
+            type="number"
+            min="0.01"
+            step="0.01"
+            placeholder="不限制"
+          />
+        </label>
+        <label class="field">
+          <span>最大耗时（秒，可选）</span>
+          <input
+            id="regressionMaxSecondsInput"
+            type="number"
+            min="1"
+            step="1"
+            placeholder="不限制"
+          />
+        </label>
+      </div>
+      <div class="regression-flags">
+        <label class="check-field">
+          <input id="regressionCriticalInput" type="checkbox" checked />
+          <span>失败时阻止发布</span>
+        </label>
+        <label class="check-field">
+          <input id="regressionEnabledInput" type="checkbox" checked />
+          <span>启用此路线</span>
+        </label>
+      </div>
+      <div class="dialog-actions">
+        <button class="button ghost" type="button" data-close-dialog>
+          取消
+        </button>
+        <button class="button primary" type="submit">保存路线</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="discardDraftDialog">
     <form class="dialog-form" id="discardDraftForm" method="dialog">
       <div class="dialog-heading">
@@ -478,6 +586,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="admin.js?v=20260726-16"></script>
+  <script src="admin.js?v=20260726-17"></script>
 </body>
 </html>

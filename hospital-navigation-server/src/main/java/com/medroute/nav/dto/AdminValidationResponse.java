@@ -8,11 +8,32 @@ public record AdminValidationResponse(
     long contentRevision,
     boolean passed,
     List<Issue> errors,
-    List<Issue> warnings
+    List<Issue> warnings,
+    List<AdminRouteRegressionResult> routeRegressions
 ) {
     public AdminValidationResponse {
         errors = errors == null ? List.of() : List.copyOf(errors);
         warnings = warnings == null ? List.of() : List.copyOf(warnings);
+        routeRegressions = routeRegressions == null
+            ? List.of()
+            : List.copyOf(routeRegressions);
+    }
+
+    public AdminValidationResponse(
+        UUID releaseId,
+        long contentRevision,
+        boolean passed,
+        List<Issue> errors,
+        List<Issue> warnings
+    ) {
+        this(
+            releaseId,
+            contentRevision,
+            passed,
+            errors,
+            warnings,
+            List.of()
+        );
     }
 
     public record Issue(

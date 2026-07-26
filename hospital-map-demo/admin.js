@@ -47,6 +47,11 @@
     inspectorContent: document.querySelector("#inspectorContent"),
     validationContent: document.querySelector("#validationContent"),
     validationCount: document.querySelector("#validationCount"),
+    regressionCaseCount: document.querySelector("#regressionCaseCount"),
+    regressionCaseList: document.querySelector("#regressionCaseList"),
+    addRegressionCaseButton: document.querySelector(
+      "#addRegressionCaseButton"
+    ),
     operationCount: document.querySelector("#operationCount"),
     inspectorPanel: document.querySelector("#inspectorPanel"),
     validationPanel: document.querySelector("#validationPanel"),
@@ -97,6 +102,34 @@
     copyQrUrlButton: document.querySelector("#copyQrUrlButton"),
     downloadQrButton: document.querySelector("#downloadQrButton"),
     generateQrButton: document.querySelector("#generateQrButton"),
+    routeRegressionDialog: document.querySelector("#routeRegressionDialog"),
+    routeRegressionForm: document.querySelector("#routeRegressionForm"),
+    routeRegressionDialogTitle: document.querySelector(
+      "#routeRegressionDialogTitle"
+    ),
+    regressionNameInput: document.querySelector("#regressionNameInput"),
+    regressionCodeInput: document.querySelector("#regressionCodeInput"),
+    regressionStartPoiInput: document.querySelector(
+      "#regressionStartPoiInput"
+    ),
+    regressionEndPoiInput: document.querySelector(
+      "#regressionEndPoiInput"
+    ),
+    regressionRouteModeInput: document.querySelector(
+      "#regressionRouteModeInput"
+    ),
+    regressionMaxDistanceInput: document.querySelector(
+      "#regressionMaxDistanceInput"
+    ),
+    regressionMaxSecondsInput: document.querySelector(
+      "#regressionMaxSecondsInput"
+    ),
+    regressionCriticalInput: document.querySelector(
+      "#regressionCriticalInput"
+    ),
+    regressionEnabledInput: document.querySelector(
+      "#regressionEnabledInput"
+    ),
     discardDraftDialog: document.querySelector("#discardDraftDialog"),
     discardDraftForm: document.querySelector("#discardDraftForm"),
     discardDraftCode: document.querySelector("#discardDraftCode"),
@@ -123,6 +156,8 @@
     dirty: false,
     busy: false,
     validation: null,
+    regressionCases: [],
+    editingRegressionCaseId: null,
     operations: null,
     drag: null,
     ignoreMapClick: false,
@@ -205,6 +240,10 @@
         `/api/admin/buildings/${BUILDING_ID}/operations/closures`
       );
       state.operations = operationResponse.data;
+      const regressionResponse = await request(
+        `/api/admin/buildings/${BUILDING_ID}/route-regression-cases`
+      );
+      state.regressionCases = regressionResponse.data.items || [];
       const preferred = preferredReleaseId
         ? state.releases.find((release) => release.id === preferredReleaseId)
         : null;
@@ -267,6 +306,7 @@
     renderConnectorControls();
     renderMap();
     renderInspector();
+    renderRouteRegressionCases();
     renderValidation();
     renderOperations();
     updateActionStates();
@@ -963,6 +1003,71 @@
     bindDelete();
   }
 
+  function renderRouteRegressionCases() {
+    const cases = state.regressionCases || [];
+    const enabledCount = cases.filter((item) => item.enabled).length;
+    elements.regressionCaseCount.textContent = `${enabledCount} 条启用`;
+    elements.addRegressionCaseButton.disabled = state.busy || !state.workspace;
+    if (cases.length === 0) {
+      elements.regressionCaseList.innerHTML =
+        '<div class="regression-empty">尚未配置关键路线</div>';
+      return;
+    }
+
+    elements.regressionCaseList.innerHTML = cases
+      .map((regressionCase) => {
+        const start = poiByCode(regressionCase.startPoiCode);
+        const end = poiByCode(regressionCase.endPoiCode);
+        const mode = regressionCase.routeMode === "accessible"
+          ? "无障碍"
+          : "普通";
+        const status = regressionCase.enabled
+          ? regressionCase.critical
+            ? `${mode} · 发布门禁`
+            : `${mode} · 仅提醒`
+          : `${mode} · 已停用`;
+        const limits = regressionLimits(regressionCase);
+        return (
+          `<article class="regression-case-row` +
+          `${regressionCase.enabled ? "" : " disabled"}">` +
+          `<div class="regression-case-heading"><div>` +
+          `<strong>${escapeHtml(regressionCase.name)}</strong>` +
+          `<span>${escapeHtml(regressionCase.code)}</span>` +
+          `</div><span class="regression-case-status">${escapeHtml(status)}</span></div>` +
+          `<div class="regression-route">` +
+          `<span>${escapeHtml(start ? start.name : regressionCase.startPoiCode)}</span>` +
+          `<span aria-hidden="true">→</span>` +
+          `<span>${escapeHtml(end ? end.name : regressionCase.endPoiCode)}</span>` +
+          `</div>` +
+          `<div class="regression-case-footer">` +
+          `<span>${escapeHtml(limits || "不限制距离和耗时")}</span>` +
+          `<div><button class="mini-button" type="button"` +
+          ` data-edit-regression="${escapeAttribute(regressionCase.id)}">编辑</button>` +
+          `<button class="mini-button danger" type="button"` +
+          ` data-delete-regression="${escapeAttribute(regressionCase.id)}">删除</button>` +
+          `</div></div></article>`
+        );
+      })
+      .join("");
+
+    for (const button of elements.regressionCaseList.querySelectorAll(
+      "[data-edit-regression]"
+    )) {
+      button.disabled = state.busy;
+      button.addEventListener("click", () => {
+        openRouteRegressionDialog(button.dataset.editRegression);
+      });
+    }
+    for (const button of elements.regressionCaseList.querySelectorAll(
+      "[data-delete-regression]"
+    )) {
+      button.disabled = state.busy;
+      button.addEventListener("click", () => {
+        deleteRouteRegressionCase(button.dataset.deleteRegression);
+      });
+    }
+  }
+
   function renderValidation() {
     if (!state.validation) {
       elements.validationContent.className = "validation-empty";
@@ -974,6 +1079,7 @@
     }
     const errors = state.validation.errors || [];
     const warnings = state.validation.warnings || [];
+    const routeRegressions = state.validation.routeRegressions || [];
     const count = errors.length + warnings.length;
     elements.validationCount.hidden = count === 0;
     elements.validationCount.textContent = String(count);
@@ -984,15 +1090,29 @@
       `<span>修订 ${state.validation.contentRevision}：` +
       `${errors.length} 个错误，${warnings.length} 个提醒</span>` +
       `</div>` +
+      regressionResultHtml(routeRegressions) +
       `<div class="issue-list">` +
-      errors.map((issue) => issueHtml(issue, false)).join("") +
-      warnings.map((issue) => issueHtml(issue, true)).join("") +
+      errors
+        .filter((issue) => issue.elementType !== "route_regression_case")
+        .map((issue) => issueHtml(issue, false))
+        .join("") +
+      warnings
+        .filter((issue) => issue.elementType !== "route_regression_case")
+        .map((issue) => issueHtml(issue, true))
+        .join("") +
       `</div>`;
     for (const button of elements.validationContent.querySelectorAll(
       "[data-issue-id]"
     )) {
       button.addEventListener("click", () => {
         const kind = issueKind(button.dataset.issueType);
+        if (
+          button.dataset.issueType === "route_regression_case" &&
+          button.dataset.issueId
+        ) {
+          openRouteRegressionDialog(button.dataset.issueId);
+          return;
+        }
         if (!kind || !button.dataset.issueId) {
           return;
         }
@@ -1000,6 +1120,48 @@
         selectObject(kind, button.dataset.issueId);
       });
     }
+  }
+
+  function regressionResultHtml(results) {
+    if (results.length === 0) {
+      return "";
+    }
+    const passed = results.filter((result) => result.passed).length;
+    return (
+      `<section class="regression-results">` +
+      `<div class="regression-results-heading">` +
+      `<strong>关键路线结果</strong>` +
+      `<span>${passed} / ${results.length} 通过</span></div>` +
+      results
+        .map((result) => {
+          const route =
+            `${result.startPoiName || result.startPoiCode} → ` +
+            `${result.endPoiName || result.endPoiCode}`;
+          const metrics = result.distanceMeters == null
+            ? "未计算出可用路线"
+            : (
+              `${formatRegressionDistance(result.distanceMeters)} 米 · ` +
+              `${formatRegressionDuration(result.estimatedSeconds)}` +
+              (
+                result.connectorCodes && result.connectorCodes.length
+                  ? ` · ${result.connectorCodes.join("、")}`
+                  : ""
+              )
+            );
+          return (
+            `<article class="regression-result-row` +
+            `${result.passed ? " passed" : " failed"}">` +
+            `<div><strong>${escapeHtml(result.caseName)}</strong>` +
+            `<span>${escapeHtml(result.passed ? "通过" : "失败")}</span></div>` +
+            `<span>${escapeHtml(route)}</span>` +
+            `<p>${escapeHtml(metrics)}</p>` +
+            `${result.passed ? "" : `<p>${escapeHtml(result.message)}</p>`}` +
+            `</article>`
+          );
+        })
+        .join("") +
+      `</section>`
+    );
   }
 
   function renderOperations() {
@@ -1493,6 +1655,179 @@
       elements.mapFileInput.value = "";
       setBusy(false);
     }
+  }
+
+  function openRouteRegressionDialog(caseId) {
+    if (!state.workspace || state.busy) {
+      return;
+    }
+    const regressionCase = caseId
+      ? state.regressionCases.find((item) => item.id === caseId)
+      : null;
+    const pois = regressionPois();
+    if (!regressionCase && pois.length < 2) {
+      showToast("至少需要两个已启用的公共 POI 才能配置关键路线。", true);
+      return;
+    }
+
+    state.editingRegressionCaseId = regressionCase
+      ? regressionCase.id
+      : null;
+    elements.routeRegressionDialogTitle.textContent = regressionCase
+      ? "编辑关键路线"
+      : "新增关键路线";
+    elements.regressionNameInput.value = regressionCase
+      ? regressionCase.name
+      : "";
+    elements.regressionCodeInput.value = regressionCase
+      ? regressionCase.code
+      : "";
+
+    const defaultStart = pois.find((poi) => poi.category === "entrance") ||
+      pois[0];
+    const defaultEnd = pois.find(
+      (poi) => !defaultStart || poi.code !== defaultStart.code
+    );
+    const startCode = regressionCase
+      ? regressionCase.startPoiCode
+      : defaultStart && defaultStart.code;
+    const endCode = regressionCase
+      ? regressionCase.endPoiCode
+      : defaultEnd && defaultEnd.code;
+    elements.regressionStartPoiInput.innerHTML = regressionPoiOptions(
+      pois,
+      startCode
+    );
+    elements.regressionEndPoiInput.innerHTML = regressionPoiOptions(
+      pois,
+      endCode
+    );
+    elements.regressionStartPoiInput.value = startCode || "";
+    elements.regressionEndPoiInput.value = endCode || "";
+    elements.regressionRouteModeInput.value = regressionCase
+      ? regressionCase.routeMode
+      : "normal";
+    elements.regressionMaxDistanceInput.value =
+      regressionCase && regressionCase.maxDistanceMeters != null
+        ? regressionCase.maxDistanceMeters
+        : "";
+    elements.regressionMaxSecondsInput.value =
+      regressionCase && regressionCase.maxEstimatedSeconds != null
+        ? regressionCase.maxEstimatedSeconds
+        : "";
+    elements.regressionCriticalInput.checked = regressionCase
+      ? regressionCase.critical
+      : true;
+    elements.regressionEnabledInput.checked = regressionCase
+      ? regressionCase.enabled
+      : true;
+    elements.routeRegressionDialog.showModal();
+    elements.regressionNameInput.focus();
+  }
+
+  function regressionPoiOptions(pois, selectedCode) {
+    const values = pois.map((poi) => [
+      poi.code,
+      `${floorCode(poi.floorId)} · ${poi.name}（${poi.code}）`
+    ]);
+    if (
+      selectedCode &&
+      !values.some(([code]) => code === selectedCode)
+    ) {
+      values.push([selectedCode, `缺失或停用 POI（${selectedCode}）`]);
+    }
+    return options(values, selectedCode);
+  }
+
+  async function saveRouteRegressionCase(event) {
+    event.preventDefault();
+    const startPoiCode = elements.regressionStartPoiInput.value;
+    const endPoiCode = elements.regressionEndPoiInput.value;
+    if (startPoiCode === endPoiCode) {
+      showToast("关键路线的起点和目的地不能相同。", true);
+      return;
+    }
+    const payload = {
+      code: elements.regressionCodeInput.value.trim(),
+      name: elements.regressionNameInput.value.trim(),
+      startPoiCode,
+      endPoiCode,
+      routeMode: elements.regressionRouteModeInput.value,
+      critical: elements.regressionCriticalInput.checked,
+      enabled: elements.regressionEnabledInput.checked,
+      maxDistanceMeters: optionalNumber(
+        elements.regressionMaxDistanceInput.value
+      ),
+      maxEstimatedSeconds: optionalInteger(
+        elements.regressionMaxSecondsInput.value
+      )
+    };
+    const editingId = state.editingRegressionCaseId;
+    setBusy(true);
+    try {
+      await request(
+        editingId
+          ? `/api/admin/route-regression-cases/${editingId}`
+          : `/api/admin/buildings/${BUILDING_ID}/route-regression-cases`,
+        {
+          method: editingId ? "PUT" : "POST",
+          body: JSON.stringify(payload)
+        }
+      );
+      await reloadRouteRegressionCases();
+      invalidateClientValidation();
+      elements.routeRegressionDialog.close();
+      showToast(editingId ? "关键路线已更新。" : "关键路线已新增。");
+    } catch (error) {
+      handleError(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteRouteRegressionCase(caseId) {
+    const regressionCase = state.regressionCases.find(
+      (item) => item.id === caseId
+    );
+    if (
+      !regressionCase ||
+      !window.confirm(`确认删除关键路线“${regressionCase.name}”？`)
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await request(`/api/admin/route-regression-cases/${caseId}`, {
+        method: "DELETE"
+      });
+      await reloadRouteRegressionCases();
+      invalidateClientValidation();
+      showToast("关键路线已删除。");
+    } catch (error) {
+      handleError(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reloadRouteRegressionCases() {
+    const response = await request(
+      `/api/admin/buildings/${BUILDING_ID}/route-regression-cases`
+    );
+    state.regressionCases = response.data.items || [];
+    renderRouteRegressionCases();
+  }
+
+  function invalidateClientValidation() {
+    state.validation = null;
+    for (const release of state.releases) {
+      if (release.status === "draft") {
+        release.validationPassed = null;
+        release.validatedRevision = null;
+      }
+    }
+    renderValidation();
+    updateActionStates();
   }
 
   async function validateDraft() {
@@ -2161,6 +2496,7 @@
       renderTools();
       renderConnectorControls();
     }
+    renderRouteRegressionCases();
     renderOperations();
     updateActionStates();
   }
@@ -2252,6 +2588,71 @@
   function floorCode(id) {
     const floor = floorById(id);
     return floor ? floor.code : "楼层缺失";
+  }
+
+  function regressionPois() {
+    if (!state.workspace) {
+      return [];
+    }
+    return state.workspace.graph.pois
+      .filter((poi) => poi.enabled && poi.accessScope === "public")
+      .slice()
+      .sort((a, b) => {
+        const floorA = floorById(a.floorId);
+        const floorB = floorById(b.floorId);
+        const level = (floorA ? floorA.levelNo : 0) -
+          (floorB ? floorB.levelNo : 0);
+        return level || a.name.localeCompare(b.name, "zh-CN");
+      });
+  }
+
+  function poiByCode(code) {
+    return state.workspace &&
+      state.workspace.graph.pois.find((poi) => poi.code === code);
+  }
+
+  function regressionLimits(regressionCase) {
+    const values = [];
+    if (regressionCase.maxDistanceMeters != null) {
+      values.push(`≤ ${formatRegressionDistance(
+        regressionCase.maxDistanceMeters
+      )} 米`);
+    }
+    if (regressionCase.maxEstimatedSeconds != null) {
+      values.push(`≤ ${formatRegressionDuration(
+        regressionCase.maxEstimatedSeconds
+      )}`);
+    }
+    return values.join(" · ");
+  }
+
+  function formatRegressionDistance(value) {
+    return new Intl.NumberFormat("zh-CN", {
+      maximumFractionDigits: 2
+    }).format(Number(value));
+  }
+
+  function formatRegressionDuration(value) {
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds)) {
+      return "耗时未知";
+    }
+    if (seconds < 60) {
+      return `${seconds} 秒`;
+    }
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    return remainder
+      ? `${minutes} 分 ${remainder} 秒`
+      : `${minutes} 分`;
+  }
+
+  function optionalNumber(value) {
+    return value.trim() === "" ? null : Number(value);
+  }
+
+  function optionalInteger(value) {
+    return value.trim() === "" ? null : Number.parseInt(value, 10);
   }
 
   function isEditable() {
@@ -2753,9 +3154,19 @@
       openConnectorDialog
     );
     elements.addLinkButton.addEventListener("click", openLinkDialog);
+    elements.addRegressionCaseButton.addEventListener("click", () => {
+      openRouteRegressionDialog();
+    });
     elements.createDraftForm.addEventListener("submit", createDraft);
     elements.connectorForm.addEventListener("submit", createConnector);
     elements.linkForm.addEventListener("submit", createLink);
+    elements.routeRegressionForm.addEventListener(
+      "submit",
+      saveRouteRegressionCase
+    );
+    elements.routeRegressionDialog.addEventListener("close", () => {
+      state.editingRegressionCaseId = null;
+    });
     elements.publishForm.addEventListener("submit", (event) => {
       event.preventDefault();
       publishDraft(elements.publishReasonInput.value.trim());

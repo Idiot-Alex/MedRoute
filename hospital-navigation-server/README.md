@@ -17,6 +17,7 @@ MedRoute 的 Spring Boot 后端。当前版本以 PostgreSQL 中的当前发布�
 - 统一客户端错误响应和 `X-Request-Id`。
 - 当前发布 POI 搜索支持人工维护的中文别名、拼音和首字母关键词。
 - 使用稳定 POI 业务编码生成固定点导航二维码 PNG。
+- 楼栋级关键路线回归配置；草稿校验显示距离、耗时和跨层设施，关键失败阻止发布。
 
 内存三层图仅保留为算法单元测试 fixture，不再是正式运行时数据源。
 
@@ -90,6 +91,11 @@ POST   /api/admin/releases/{releaseId}/validate
 POST   /api/admin/releases/{releaseId}/publish
 POST   /api/admin/releases/{releaseId}/rollback
 
+GET    /api/admin/buildings/{buildingId}/route-regression-cases
+POST   /api/admin/buildings/{buildingId}/route-regression-cases
+PUT    /api/admin/route-regression-cases/{caseId}
+DELETE /api/admin/route-regression-cases/{caseId}
+
 GET    /api/admin/buildings/{buildingId}/operations/closures
 POST   /api/admin/buildings/{buildingId}/operations/closures
 DELETE /api/admin/operations/closures/{closureId}
@@ -113,6 +119,7 @@ POST   /api/admin/navigation-qr-code
 - 草稿校验、发布、回滚、删除及运营封闭迁移。
 - 封闭设施后的备选路线和恢复后的最优路线。
 - 固定点二维码生成、PNG 尺寸、地址解码和非法协议拒绝。
+- 关键路线执行、普通/无障碍设施选择、配置写入、发布阻断和非关键提醒。
 
 本地验收还应使用 Docker PostgreSQL 运行后端并在浏览器完成一次发布/回滚闭环。
 

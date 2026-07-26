@@ -411,7 +411,8 @@ public class JdbcMapAuthoringRepository {
     public void recordValidation(
         AdminValidationResponse validation,
         long expectedRevision,
-        String actor
+        String actor,
+        long routeRegressionRevision
     ) {
         ReleaseRow release = lockEditableRelease(
             validation.releaseId(),
@@ -429,13 +430,15 @@ public class JdbcMapAuthoringRepository {
             INSERT INTO release_validation_run (
                 release_id,
                 content_revision,
+                route_regression_revision,
                 passed,
                 result_text,
                 checked_by
-            ) VALUES (?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?)
             """,
             release.databaseId(),
             validation.contentRevision(),
+            routeRegressionRevision,
             validation.passed(),
             validationJson(validation),
             actor
@@ -445,11 +448,13 @@ public class JdbcMapAuthoringRepository {
             UPDATE building_map_release
             SET validated_revision = ?,
                 validation_passed = ?,
-                last_validated_at = CURRENT_TIMESTAMP
+                last_validated_at = CURRENT_TIMESTAMP,
+                validated_route_regression_revision = ?
             WHERE id = ?
             """,
             validation.contentRevision(),
             validation.passed(),
+            routeRegressionRevision,
             release.databaseId()
         );
     }
@@ -461,6 +466,11 @@ public class JdbcMapAuthoringRepository {
         String actor,
         String reason
     ) {
+        ReleaseRow visibleRelease = findRelease(releaseId);
+        long routeRegressionRevision =
+            lockRouteRegressionConfiguration(
+                visibleRelease.buildingDatabaseId()
+            );
         ReleaseRow release = lockEditableRelease(
             releaseId,
             expectedRevision
@@ -470,6 +480,9 @@ public class JdbcMapAuthoringRepository {
             validation.validatedRevision() == null
                 || validation.validatedRevision() != release.contentRevision()
                 || !Boolean.TRUE.equals(validation.passed())
+                || validation.routeRegressionRevision() == null
+                || validation.routeRegressionRevision()
+                    != routeRegressionRevision
         ) {
             AdminValidationResponse failure = new AdminValidationResponse(
                 release.publicId(),
@@ -968,7 +981,8 @@ public class JdbcMapAuthoringRepository {
                 updated_at = CURRENT_TIMESTAMP,
                 validated_revision = NULL,
                 validation_passed = NULL,
-                last_validated_at = NULL
+                last_validated_at = NULL,
+                validated_route_regression_revision = NULL
             WHERE id = ?
             """,
             releaseDatabaseId
@@ -1880,16 +1894,45 @@ public class JdbcMapAuthoringRepository {
     private ValidationState validationState(long releaseId) {
         return jdbc.queryForObject(
             """
-            SELECT validated_revision, validation_passed
+            SELECT
+                validated_revision,
+                validation_passed,
+                validated_route_regression_revision
             FROM building_map_release
             WHERE id = ?
             """,
             (resultSet, rowNumber) -> new ValidationState(
                 nullableLong(resultSet, "validated_revision"),
-                nullableBoolean(resultSet, "validation_passed")
+                nullableBoolean(resultSet, "validation_passed"),
+                nullableLong(
+                    resultSet,
+                    "validated_route_regression_revision"
+                )
             ),
             releaseId
         );
+    }
+
+    private long lockRouteRegressionConfiguration(
+        long buildingDatabaseId
+    ) {
+        List<Long> revisions = jdbc.query(
+            """
+            SELECT revision
+            FROM building_route_regression_config
+            WHERE building_id = ?
+            FOR UPDATE
+            """,
+            (resultSet, rowNumber) -> resultSet.getLong("revision"),
+            buildingDatabaseId
+        );
+        if (revisions.isEmpty()) {
+            throw new IllegalStateException(
+                "Missing route regression configuration for building "
+                    + buildingDatabaseId
+            );
+        }
+        return revisions.get(0);
     }
 
     private String validationJson(AdminValidationResponse validation) {
@@ -1999,7 +2042,8 @@ public class JdbcMapAuthoringRepository {
 
     private record ValidationState(
         Long validatedRevision,
-        Boolean passed
+        Boolean passed,
+        Long routeRegressionRevision
     ) {
     }
 

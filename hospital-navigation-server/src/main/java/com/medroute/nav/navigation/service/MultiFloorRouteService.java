@@ -5,7 +5,6 @@ import com.medroute.nav.dto.NavigationRouteResponse;
 import com.medroute.nav.model.RouteMode;
 import com.medroute.nav.navigation.algorithm.MultiFloorDijkstraPathFinder;
 import com.medroute.nav.navigation.algorithm.MultiFloorDijkstraPathFinder.RoutePath;
-import com.medroute.nav.navigation.model.AccessScope;
 import com.medroute.nav.navigation.model.ConnectorSnapshot;
 import com.medroute.nav.navigation.model.FloorSnapshot;
 import com.medroute.nav.navigation.model.GraphArc;
@@ -21,7 +20,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
 
@@ -75,7 +73,7 @@ public class MultiFloorRouteService {
             graph.releaseId(),
             calculatedAt
         );
-        Predicate<GraphArc> allowed = allowedArcs(
+        Predicate<GraphArc> allowed = PublicRouteArcPolicy.allowed(
             graph,
             request.routeMode(),
             operationStatus.closedElementIds(),
@@ -96,41 +94,6 @@ public class MultiFloorRouteService {
             endPoi,
             path
         );
-    }
-
-    private Predicate<GraphArc> allowedArcs(
-        NavigationGraph graph,
-        RouteMode routeMode,
-        Set<UUID> closedElements,
-        Set<UUID> closedConnectors
-    ) {
-        return arc -> {
-            if (
-                !arc.enabled()
-                    || arc.accessScope() != AccessScope.PUBLIC
-                    || closedElements.contains(arc.elementId())
-                    || (
-                        arc.connectorId() != null
-                            && closedConnectors.contains(arc.connectorId())
-                    )
-            ) {
-                return false;
-            }
-            if (routeMode == RouteMode.ACCESSIBLE) {
-                if (
-                    !arc.accessible()
-                        || arc.type()
-                            == com.medroute.nav.navigation.model.ArcType.STAIRS
-                ) {
-                    return false;
-                }
-                ConnectorSnapshot connector = arc.connectorId() == null
-                    ? null
-                    : graph.connectors().get(arc.connectorId());
-                return connector == null || connector.accessible();
-            }
-            return true;
-        };
     }
 
     private NavigationRouteResponse assemble(

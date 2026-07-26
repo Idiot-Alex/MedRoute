@@ -922,6 +922,194 @@ textarea:disabled {
   background: var(--success-soft);
 }
 
+.regression-config {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--line);
+}
+
+.regression-config .section-heading {
+  align-items: start;
+}
+
+.regression-config .section-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.regression-config h2,
+.regression-results-heading strong {
+  margin: 0;
+  font-size: 13px;
+}
+
+.regression-config .section-heading span,
+.regression-results-heading span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.regression-case-list {
+  display: grid;
+  gap: 8px;
+}
+
+.regression-empty {
+  padding: 16px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.regression-case-row {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--selected);
+  border-radius: var(--radius);
+  background: var(--surface-strong);
+}
+
+.regression-case-row.disabled {
+  border-left-color: var(--line-strong);
+  opacity: 0.68;
+}
+
+.regression-case-heading,
+.regression-case-footer,
+.regression-results-heading,
+.regression-result-row > div {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.regression-case-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.regression-case-heading strong,
+.regression-case-heading span,
+.regression-route span,
+.regression-case-footer > span {
+  overflow-wrap: anywhere;
+}
+
+.regression-case-heading strong {
+  font-size: 12px;
+}
+
+.regression-case-heading span,
+.regression-case-status,
+.regression-case-footer {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.regression-case-status {
+  flex: 0 0 auto;
+  color: var(--selected);
+  font-weight: 800;
+}
+
+.regression-case-row.disabled .regression-case-status {
+  color: var(--muted);
+}
+
+.regression-route {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.regression-route span:last-child {
+  text-align: right;
+}
+
+.regression-case-footer {
+  align-items: center;
+}
+
+.regression-case-footer > span {
+  min-width: 0;
+}
+
+.regression-case-footer > div {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.mini-button.danger {
+  color: var(--danger);
+  border-color: #e8aaa4;
+}
+
+.regression-config + #validationContent {
+  margin-top: 14px;
+}
+
+.regression-results {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.regression-results-heading {
+  align-items: center;
+}
+
+.regression-result-row {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--surface-strong);
+}
+
+.regression-result-row.passed {
+  border-left-color: var(--success);
+}
+
+.regression-result-row > div {
+  align-items: center;
+}
+
+.regression-result-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.regression-result-row > div span {
+  flex: 0 0 auto;
+  color: var(--danger);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.regression-result-row.passed > div span {
+  color: var(--success);
+}
+
+.regression-result-row > span,
+.regression-result-row p {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .operations-meta {
   display: grid;
   gap: 3px;
@@ -1083,6 +1271,17 @@ dialog::backdrop {
 
 .dialog-note {
   margin: 0;
+}
+
+#routeRegressionDialog {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.regression-flags {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .dialog-actions {
