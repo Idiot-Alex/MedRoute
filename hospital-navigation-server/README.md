@@ -3,6 +3,9 @@
 MedRoute 的 Spring Boot 后端。当前版本以 PostgreSQL 中的当前发布图作为正式导航
 数据源，并提供一套适合少量维护人员使用的地图编修、发布和运营 API。
 
+项目使用 Spring Boot 3.5 长期维护线和 Java 17，不使用已停止社区维护的旧
+Spring Boot 3.3 依赖。
+
 ## 当前能力
 
 - PostgreSQL 16 + Flyway 管理地图目录、路网、发布版本、底图和运营状态。
@@ -56,6 +59,27 @@ cd hospital-navigation-server
 ```
 
 Flyway 会在应用启动前校验并执行尚未应用的数据库迁移。
+
+### 受控试点容器
+
+在仓库根目录执行：
+
+```bash
+docker compose --profile pilot up -d --build
+```
+
+该 Profile 从 Maven 多阶段镜像构建 JAR，以 Java 17 JRE 和非 root 用户运行。
+Spring Boot 的 `8080` 只存在于 Compose 内部网络，不映射到宿主机；手机通过
+公开网关 `8088` 使用导航 API，部署电脑通过回环网关 `8089` 使用维护 API。
+这可以避免未接入登录的完整后端被局域网直接访问。
+
+切回 IDEA 开发前先停止试点应用：
+
+```bash
+docker compose --profile pilot stop pilot-gateway navigation-server
+```
+
+不要同时运行 IDEA 后端和试点后端，以免两个实例并发修改同一发布数据库。
 
 ## 导航 API
 
@@ -160,11 +184,14 @@ MEDROUTE_MAP_IMAGE=/path/to/replacement.jpg \
 
 当前维护 API 通过 `X-Admin-User` 记录操作人，但尚未接入 Spring Security，
 该请求头不能视为身份认证。因此后端和维护端默认只允许本机访问；局域网手机通过
-导航 Vite 的公开 API 白名单代理进行试点验收。当前宽松 CORS 只适合本机验收。
-生产部署前必须增加正式登录、角色和楼栋数据范围、HTTPS、反向代理及受控 CORS。
+导航 Vite 或试点 Nginx 的公开 API 白名单代理进行验收。试点 Nginx 还会拒绝
+维护入口中的非本机网页 Origin，但这不能替代身份认证。控制器当前跨域配置仅
+用于本机开发兼容，完整后端不得直接暴露到局域网或公网。生产部署前必须增加
+正式登录、角色和楼栋数据范围、HTTPS、反向代理及受控 CORS。
 
 正式契约和操作步骤见：
 
 - [`docs/05-接口设计.md`](../docs/05-接口设计.md)
 - [`docs/10-地图维护与发布操作手册.md`](../docs/10-地图维护与发布操作手册.md)
 - [`docs/12-公开底图试点建图与验收清单.md`](../docs/12-公开底图试点建图与验收清单.md)
+- [`docs/14-受控试点部署与验收方案.md`](../docs/14-受控试点部署与验收方案.md)

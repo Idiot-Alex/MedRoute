@@ -16,9 +16,30 @@ Flyway                         自动建表和数据库版本迁移
 
 正式路线由后端计算。地图维护只修改草稿，用户导航只读取当前启用的发布版本。
 
-## 快速启动
+## 受控试点启动
 
-准备 JDK 17 和 Docker Desktop；新版前端还需要 Node.js 20 与 pnpm 10，
+现场技术试点只需 Docker Desktop。在仓库根目录执行：
+
+```bash
+docker compose --profile pilot up -d --build
+docker compose --profile pilot ps
+```
+
+该模式只运行一个 Spring Boot 实例，并使用构建后的前端：
+
+- 手机导航：`http://<电脑局域网IP>:8088/`
+- 电脑维护：`http://127.0.0.1:8089/?navigation=http://<电脑局域网IP>:8088/`
+- PostgreSQL：仅本机 `127.0.0.1:5432`
+- Spring Boot：仅 Compose 内部网络，不映射宿主端口
+
+公开的 `8088` 只代理上下文、POI、路线和底图接口，访问 `/api/admin` 返回
+`404`。维护端尚未登录，因此 `8089` 只绑定本机，并拒绝非本机网页 Origin。
+完整命令和验收边界见
+[`docs/14-受控试点部署与验收方案.md`](docs/14-受控试点部署与验收方案.md)。
+
+## 开发启动
+
+准备 JDK 17 和 Docker Desktop；新版前端推荐 Node.js 24 LTS 与 pnpm 10，
 兼容静态页面需要 Python 3。在仓库根目录启动数据库：
 
 ```bash
@@ -69,7 +90,9 @@ pnpm dev:navigation
 
 IDEA 可以打开仓库根目录，也可以只打开 `hospital-navigation-server`。运行
 `HospitalNavigationApplication` 前，确认 Project SDK 为 JDK 17 且 PostgreSQL
-容器已经启动。
+容器已经启动。若此前运行了试点 Profile，先执行
+`docker compose --profile pilot stop pilot-gateway navigation-server`，避免两个
+后端实例同时修改数据库。
 
 ## 验证
 
@@ -88,9 +111,23 @@ pnpm build
 真实文件草稿编修回归：
 
 ```bash
-MEDROUTE_MAP_IMAGE=/path/to/replacement.jpg \
+MEDROUTE_API_BASE=http://127.0.0.1:8089 \
+  MEDROUTE_MAP_IMAGE=/path/to/replacement.jpg \
   MEDROUTE_FLOOR_CODE=1F \
   node scripts/pilot-authoring-smoke.mjs
+```
+
+受控试点公开入口和维护入口回归：
+
+```bash
+MEDROUTE_API_BASE=http://192.168.5.42:8088 \
+  MEDROUTE_EXPECTED_POI_COUNT=30 \
+  node scripts/pilot-api-smoke.mjs --public-only
+
+MEDROUTE_API_BASE=http://127.0.0.1:8089 \
+  MEDROUTE_NAVIGATION_BASE_URL=http://192.168.5.42:8088/ \
+  MEDROUTE_EXPECTED_POI_COUNT=30 \
+  node scripts/pilot-api-smoke.mjs --write
 ```
 
 真实 PostgreSQL 备份和恢复演练：
@@ -109,4 +146,6 @@ scripts/restore-postgres.sh backups/<backup>.dump medroute_restore_drill
 
 - 第一份测试数据是一栋三层门急诊楼，底图来自公开医院页面，仅用于开发验证。
 - 当前维护端未接入正式登录和权限系统，只适合本机验收。
-- 生产部署前必须增加身份认证、楼栋数据权限、HTTPS、反向代理和定时备份。
+- `pilot` Profile 是局域网受控试点部署，不是公网生产部署。
+- 转正式环境前必须增加身份认证、楼栋数据权限、HTTPS、强密码、异机定时备份
+  和监控告警。

@@ -15,7 +15,8 @@ public/                   两个应用共享的本地测试底图
 
 ## 安装和启动
 
-需要 Node.js 20 或更高版本和 pnpm 10。
+推荐 Node.js 24 LTS 和 pnpm 10；Node.js 22.12 及以上的 22 LTS 仍受支持。
+不要使用已经结束官方维护的 Node.js 20。
 
 ```bash
 pnpm install
@@ -46,8 +47,8 @@ http://127.0.0.1:5173/?api=http://127.0.0.1:8082
 http://127.0.0.1:5174/?api=http://127.0.0.1:8082
 ```
 
-生产构建不包含开发代理，应通过同域反向代理提供 `/api`，或显式传入正式
-`api` 地址。
+生产构建不包含 Vite 开发代理。仓库的 `pilot-gateway` 使用 Nginx 分别承载两套
+生产构建，并通过同域代理提供 `/api`；其他正式环境也应保持同源部署。
 
 后端未启动时使用本地演示数据：
 
@@ -111,16 +112,41 @@ http://127.0.0.1:5173/?navigation=http://192.168.5.42:5174/
 也可以直接在二维码窗口修改导航基础地址。不要把尚无身份认证的维护端暴露给
 局域网；正式部署后再使用 HTTPS 域名和受控反向代理。
 
+## 受控试点构建
+
+在仓库根目录启动构建后的两套前端、单个后端和 PostgreSQL：
+
+```bash
+docker compose --profile pilot up -d --build
+```
+
+假设电脑局域网 IP 为 `192.168.5.42`：
+
+```text
+手机导航：http://192.168.5.42:8088/
+电脑维护：http://127.0.0.1:8089/?navigation=http://192.168.5.42:8088/
+```
+
+导航入口 `8088` 只转发公开 API，维护入口 `8089` 仅绑定本机，后端只在
+Compose 内部网络可见。Nginx 为两套页面设置 CSP 等安全响应头，并对哈希静态
+资源使用不可变缓存。完整部署步骤见
+[`docs/14-受控试点部署与验收方案.md`](../docs/14-受控试点部署与验收方案.md)。
+
 ## 验证
 
 ```bash
 pnpm test
 pnpm typecheck
 pnpm build
-MEDROUTE_API_BASE=http://192.168.5.42:5174 \
+MEDROUTE_API_BASE=http://192.168.5.42:8088 \
   MEDROUTE_EXPECTED_POI_COUNT=30 \
   node ../scripts/pilot-api-smoke.mjs --public-only
-MEDROUTE_MAP_IMAGE=/path/to/replacement.jpg \
+MEDROUTE_API_BASE=http://127.0.0.1:8089 \
+  MEDROUTE_NAVIGATION_BASE_URL=http://192.168.5.42:8088/ \
+  MEDROUTE_EXPECTED_POI_COUNT=30 \
+  node ../scripts/pilot-api-smoke.mjs --write
+MEDROUTE_API_BASE=http://127.0.0.1:8089 \
+  MEDROUTE_MAP_IMAGE=/path/to/replacement.jpg \
   MEDROUTE_FLOOR_CODE=1F \
   node ../scripts/pilot-authoring-smoke.mjs
 ```

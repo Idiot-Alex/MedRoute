@@ -1,0 +1,25 @@
+FROM node:24-alpine AS build
+
+RUN corepack enable \
+    && corepack prepare pnpm@10.22.0 --activate
+WORKDIR /workspace
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/map-admin-web/package.json ./apps/map-admin-web/
+COPY apps/navigation-web/package.json ./apps/navigation-web/
+COPY packages/api-client/package.json ./packages/api-client/
+COPY packages/map-core/package.json ./packages/map-core/
+RUN pnpm install --frozen-lockfile
+COPY . .
+RUN pnpm build
+
+FROM nginx:stable-alpine
+
+COPY pilot-nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build \
+    /workspace/apps/navigation-web/dist \
+    /usr/share/nginx/navigation
+COPY --from=build \
+    /workspace/apps/map-admin-web/dist \
+    /usr/share/nginx/admin
+
+EXPOSE 80 81
