@@ -268,6 +268,7 @@ public class DraftGraphValidator {
         for (DraftGraphPayload.Poi poi : graph.pois()) {
             checkCoordinates(poi, floors.get(poi.floorId()), errors);
         }
+        checkEnabledNodeReferences(graph, nodes, errors);
         checkConnectors(graph, errors);
         checkIsolatedNodes(graph, nodes, errors);
         checkReachability(graph, nodes, errors, warnings);
@@ -300,6 +301,74 @@ public class DraftGraphValidator {
                 )
             );
         }
+    }
+
+    private void checkEnabledNodeReferences(
+        DraftGraphPayload graph,
+        Map<UUID, DraftGraphPayload.Node> nodes,
+        List<AdminValidationResponse.Issue> errors
+    ) {
+        for (DraftGraphPayload.Edge edge : graph.edges()) {
+            if (
+                edge.enabled()
+                    && (
+                        isDisabled(nodes, edge.fromNodeId())
+                            || isDisabled(nodes, edge.toNodeId())
+                    )
+            ) {
+                errors.add(
+                    issue(
+                        "EDGE_REFERENCES_DISABLED_NODE",
+                        "path_edge",
+                        edge.id(),
+                        edge.code() + " 引用了已停用的路径节点。"
+                    )
+                );
+            }
+        }
+        for (DraftGraphPayload.Poi poi : graph.pois()) {
+            if (poi.enabled() && isDisabled(nodes, poi.nodeId())) {
+                errors.add(
+                    issue(
+                        "POI_REFERENCES_DISABLED_NODE",
+                        "poi",
+                        poi.id(),
+                        poi.name() + " 绑定了已停用的路径节点。"
+                    )
+                );
+            }
+        }
+        Map<UUID, DraftGraphPayload.Connector> connectors = new HashMap<>();
+        for (DraftGraphPayload.Connector connector : graph.connectors()) {
+            connectors.put(connector.id(), connector);
+        }
+        for (DraftGraphPayload.ConnectorStop stop : graph.connectorStops()) {
+            DraftGraphPayload.Connector connector = connectors.get(
+                stop.connectorId()
+            );
+            if (
+                connector != null
+                    && connector.enabled()
+                    && isDisabled(nodes, stop.nodeId())
+            ) {
+                errors.add(
+                    issue(
+                        "CONNECTOR_STOP_REFERENCES_DISABLED_NODE",
+                        "connector_stop",
+                        stop.id(),
+                        stop.code() + " 绑定了已停用的路径节点。"
+                    )
+                );
+            }
+        }
+    }
+
+    private boolean isDisabled(
+        Map<UUID, DraftGraphPayload.Node> nodes,
+        UUID nodeId
+    ) {
+        DraftGraphPayload.Node node = nodes.get(nodeId);
+        return node != null && !node.enabled();
     }
 
     private void checkCoordinates(
@@ -492,19 +561,30 @@ public class DraftGraphValidator {
             }
         }
 
-        if (!start.accessible()) {
-            warnings.add(
+        List<DraftGraphPayload.Poi> accessiblePois = publicPois.stream()
+            .filter(DraftGraphPayload.Poi::accessible)
+            .toList();
+        if (accessiblePois.isEmpty()) {
+            return;
+        }
+        DraftGraphPayload.Poi accessibleStart = publicPois.stream()
+            .filter(poi -> "entrance".equals(poi.category()))
+            .filter(DraftGraphPayload.Poi::accessible)
+            .findFirst()
+            .orElse(null);
+        if (accessibleStart == null) {
+            errors.add(
                 issue(
-                    "ENTRANCE_NOT_ACCESSIBLE",
-                    "poi",
-                    start.id(),
-                    start.name() + " 未标记为无障碍入口。"
+                    "NO_ACCESSIBLE_ENTRANCE_POI",
+                    "release",
+                    null,
+                    "存在无障碍 POI，但未配置启用的公共无障碍入口。"
                 )
             );
             return;
         }
         Set<UUID> accessibleReachable = reachable(
-            start.nodeId(),
+            accessibleStart.nodeId(),
             adjacency(
                 graph,
                 stops,
@@ -521,11 +601,8 @@ public class DraftGraphValidator {
                     && "public".equals(connector.accessScope())
             )
         );
-        for (DraftGraphPayload.Poi poi : publicPois) {
-            if (
-                poi.accessible()
-                    && !accessibleReachable.contains(poi.nodeId())
-            ) {
+        for (DraftGraphPayload.Poi poi : accessiblePois) {
+            if (!accessibleReachable.contains(poi.nodeId())) {
                 errors.add(
                     issue(
                         "ACCESSIBLE_POI_UNREACHABLE",

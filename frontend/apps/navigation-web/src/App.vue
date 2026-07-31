@@ -33,6 +33,12 @@ import { computed, onMounted, ref } from "vue";
 import PoiSearchDialog from "./components/PoiSearchDialog.vue";
 import RouteFloorMap from "./components/RouteFloorMap.vue";
 import StepNavigator from "./components/StepNavigator.vue";
+import {
+  navigationCalculationBlocker,
+  resolveNavigationEndpoints,
+  shouldAutomaticallyCalculateRoute,
+  type NavigationRouteMode,
+} from "./navigation-safety";
 
 const params = new URLSearchParams(window.location.search);
 const apiBase = (
@@ -62,9 +68,9 @@ const pois = ref<NavigationPoi[]>([]);
 const route = ref<NavigationRoute | null>(null);
 const startPoiId = ref("");
 const endPoiId = ref("");
-const routeMode = ref(
+const routeMode = ref<NavigationRouteMode>(
   ["normal", "accessible"].includes(requestedRouteMode)
-    ? requestedRouteMode
+    ? (requestedRouteMode as NavigationRouteMode)
     : "normal",
 );
 const activeFloorId = ref("");
@@ -205,61 +211,47 @@ async function load(): Promise<void> {
         "NAVIGATION_DATA_INCOMPLETE",
       );
     }
-    const entrance =
-      pois.value.find((poi) => poi.category === "entrance") ?? pois.value[0];
-    const destination =
-      pois.value.find((poi) => poi.id !== entrance?.id) ?? pois.value[1];
-    const requestedStart = findNavigationPoiByReference(
+    const endpointResolution = resolveNavigationEndpoints(
       pois.value,
       startReference,
-    );
-    const requestedEnd = findNavigationPoiByReference(
-      pois.value,
       endReference,
     );
-    const notices: string[] = [];
-    if (startReference && !requestedStart) {
-      notices.push("链接中的起点已失效，已改为默认入口");
-    }
-    if (endReference && !requestedEnd) {
-      notices.push("链接中的目的地已失效，请重新选择");
-    }
+    const notices = [...endpointResolution.notices];
     if (
       requestedRouteMode &&
       !["normal", "accessible"].includes(requestedRouteMode)
     ) {
       notices.push("链接中的路线偏好不可用，已改为常规路线");
     }
-    const resolvedStart = requestedStart ?? entrance ?? pois.value[0]!;
-    let resolvedEnd = requestedEnd ?? destination ?? pois.value[1]!;
-    if (resolvedEnd.id === resolvedStart.id) {
-      resolvedEnd =
-        pois.value.find((poi) => poi.id !== resolvedStart.id) ??
-        resolvedEnd;
-      if (requestedEnd) {
-        notices.push("起点和目的地相同，已保留另一个可选地点");
-      }
-    }
-    startPoiId.value = resolvedStart.id;
-    endPoiId.value = resolvedEnd.id;
-    if (
-      !context.value.supportedRouteModes.includes(routeMode.value)
-    ) {
-      routeMode.value = "normal";
-      notices.push("链接中的路线偏好不可用，已改为常规路线");
-    }
+    startPoiId.value = endpointResolution.startPoiId;
+    endPoiId.value = endpointResolution.endPoiId;
+    const calculationBlocker = navigationCalculationBlocker({
+      contextLoaded: true,
+      startPoiId: startPoiId.value,
+      endPoiId: endPoiId.value,
+      routeMode: routeMode.value,
+      supportedRouteModes: context.value.supportedRouteModes,
+    });
     deepLinkNotice.value = notices.join("；");
+    routeError.value = calculationBlocker;
     activeFloorId.value =
-      resolvedStart.floorId ?? context.value.floors[0]?.id ?? "";
-    if (demoMode.value || endReference) {
+      startPoi.value?.floorId ?? context.value.floors[0]?.id ?? "";
+    if (
+      shouldAutomaticallyCalculateRoute(
+        demoMode.value,
+        endReference,
+        calculationBlocker,
+      )
+    ) {
       await calculate();
     } else if (
-      params.has("start") ||
-      params.has("end") ||
-      params.has("startPoiCode") ||
-      params.has("endPoiCode") ||
-      params.has("buildingId") ||
-      params.has("mode")
+      !calculationBlocker &&
+      (params.has("start") ||
+        params.has("end") ||
+        params.has("startPoiCode") ||
+        params.has("endPoiCode") ||
+        params.has("buildingId") ||
+        params.has("mode"))
     ) {
       syncNavigationUrl();
     }
@@ -282,14 +274,15 @@ function useDemo(): void {
 }
 
 async function calculate(): Promise<void> {
-  if (
-    !context.value ||
-    !startPoiId.value ||
-    !endPoiId.value ||
-    startPoiId.value === endPoiId.value
-  ) {
-    routeError.value =
-      startPoiId.value === endPoiId.value ? "起点和终点不能相同。" : "";
+  const calculationBlocker = navigationCalculationBlocker({
+    contextLoaded: Boolean(context.value),
+    startPoiId: startPoiId.value,
+    endPoiId: endPoiId.value,
+    routeMode: routeMode.value,
+    supportedRouteModes: context.value?.supportedRouteModes ?? [],
+  });
+  if (!context.value || calculationBlocker) {
+    routeError.value = calculationBlocker;
     return;
   }
   cancelRouteRequest();
@@ -393,9 +386,6 @@ async function refreshPublishedData(signal: AbortSignal): Promise<void> {
 
   context.value = nextContext;
   pois.value = poiResponse.items;
-  if (!nextContext.supportedRouteModes.includes(routeMode.value)) {
-    routeMode.value = "normal";
-  }
   const nextStart = findNavigationPoiByReference(pois.value, startCode);
   const nextEnd = findNavigationPoiByReference(pois.value, endCode);
   if (
@@ -403,20 +393,10 @@ async function refreshPublishedData(signal: AbortSignal): Promise<void> {
     !nextEnd ||
     nextStart.id === nextEnd.id
   ) {
-    const entrance =
-      pois.value.find((poi) => poi.category === "entrance") ??
-      pois.value[0];
-    const destination =
-      pois.value.find((poi) => poi.id !== entrance?.id) ??
-      pois.value[1];
-    startPoiId.value = nextStart?.id ?? entrance?.id ?? "";
-    endPoiId.value =
-      nextEnd?.id === startPoiId.value
-        ? destination?.id ?? ""
-        : nextEnd?.id ?? destination?.id ?? "";
+    startPoiId.value = nextStart?.id ?? "";
+    endPoiId.value = nextEnd?.id ?? "";
     activeFloorId.value =
       startPoi.value?.floorId ?? nextContext.floors[0]?.id ?? "";
-    syncNavigationUrl();
     throw new ApiError(
       "医院地图已更新，原起点或目的地已变化，请确认后重新导航。",
       409,
@@ -427,6 +407,22 @@ async function refreshPublishedData(signal: AbortSignal): Promise<void> {
   startPoiId.value = nextStart.id;
   endPoiId.value = nextEnd.id;
   activeFloorId.value = nextStart.floorId;
+  const calculationBlocker = navigationCalculationBlocker({
+    contextLoaded: true,
+    startPoiId: startPoiId.value,
+    endPoiId: endPoiId.value,
+    routeMode: routeMode.value,
+    supportedRouteModes: nextContext.supportedRouteModes,
+  });
+  if (calculationBlocker) {
+    deepLinkNotice.value =
+      "医院地图已更新，最新版本不再支持所选路线偏好";
+    throw new ApiError(
+      calculationBlocker,
+      422,
+      "NAVIGATION_ROUTE_MODE_UNSUPPORTED",
+    );
+  }
   deepLinkNotice.value =
     "医院地图已更新，已按最新版本重新规划路线";
   syncNavigationUrl();
@@ -439,7 +435,13 @@ function swapEndpoints(): void {
     startPoiId.value,
   ];
   route.value = null;
-  routeError.value = "";
+  routeError.value = navigationCalculationBlocker({
+    contextLoaded: Boolean(context.value),
+    startPoiId: startPoiId.value,
+    endPoiId: endPoiId.value,
+    routeMode: routeMode.value,
+    supportedRouteModes: context.value?.supportedRouteModes ?? [],
+  });
   stepNavigatorOpen.value = false;
   activeFloorId.value =
     startPoi.value?.floorId ?? activeFloorId.value;
@@ -485,10 +487,13 @@ function selectEndpoint(
     endPoiId.value = poiId;
   }
   route.value = null;
-  routeError.value =
-    startPoiId.value === endPoiId.value
-      ? "起点和终点不能相同。"
-      : "";
+  routeError.value = navigationCalculationBlocker({
+    contextLoaded: Boolean(context.value),
+    startPoiId: startPoiId.value,
+    endPoiId: endPoiId.value,
+    routeMode: routeMode.value,
+    supportedRouteModes: context.value?.supportedRouteModes ?? [],
+  });
   deepLinkNotice.value = "";
   stepNavigatorOpen.value = false;
   const selected = pois.value.find((poi) => poi.id === poiId);
@@ -505,7 +510,13 @@ function chooseRouteMode(mode: "normal" | "accessible"): void {
   cancelRouteRequest();
   routeMode.value = mode;
   route.value = null;
-  routeError.value = "";
+  routeError.value = navigationCalculationBlocker({
+    contextLoaded: Boolean(context.value),
+    startPoiId: startPoiId.value,
+    endPoiId: endPoiId.value,
+    routeMode: routeMode.value,
+    supportedRouteModes: context.value?.supportedRouteModes ?? [],
+  });
   stepNavigatorOpen.value = false;
   syncNavigationUrl();
 }
@@ -751,7 +762,7 @@ onMounted(load);
             >
               <button
                 type="button"
-                class="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-sm px-2.5 text-xs font-medium"
+                class="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-sm px-2.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40"
                 :aria-pressed="routeMode === 'normal'"
                 :class="
                   routeMode === 'normal'
@@ -765,8 +776,14 @@ onMounted(load);
               </button>
               <button
                 type="button"
-                class="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-sm px-2.5 text-xs font-medium"
+                class="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-sm px-2.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40"
+                :disabled="!context.supportedRouteModes.includes('accessible')"
                 :aria-pressed="routeMode === 'accessible'"
+                :title="
+                  context.supportedRouteModes.includes('accessible')
+                    ? '使用无障碍路线'
+                    : '当前地图不支持无障碍路线'
+                "
                 :class="
                   routeMode === 'accessible'
                     ? 'bg-[#e3f3f3] text-[#066d77]'

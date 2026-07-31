@@ -227,6 +227,8 @@ public class JdbcPublishedGraphRepository implements PublishedGraphRepository {
             JOIN path_node from_node ON from_node.id = e.from_node_id
             JOIN path_node to_node ON to_node.id = e.to_node_id
             WHERE e.release_id = ?
+              AND from_node.enabled = TRUE
+              AND to_node.enabled = TRUE
             ORDER BY e.code
             """,
             resultSet -> {
@@ -274,6 +276,7 @@ public class JdbcPublishedGraphRepository implements PublishedGraphRepository {
             WHERE p.release_id = ?
               AND p.enabled = TRUE
               AND p.access_scope = 'public'
+              AND n.enabled = TRUE
             ORDER BY f.level_no, p.name
             """,
             resultSet -> {
@@ -368,6 +371,7 @@ public class JdbcPublishedGraphRepository implements PublishedGraphRepository {
             JOIN floor f ON f.id = s.floor_id
             JOIN path_node n ON n.id = s.node_id
             WHERE s.release_id = ?
+              AND n.enabled = TRUE
             ORDER BY c.code, f.level_no
             """,
             resultSet -> {
@@ -405,7 +409,11 @@ public class JdbcPublishedGraphRepository implements PublishedGraphRepository {
             JOIN vertical_connector c ON c.id = l.connector_id
             JOIN connector_stop from_stop ON from_stop.id = l.from_stop_id
             JOIN connector_stop to_stop ON to_stop.id = l.to_stop_id
+            JOIN path_node from_node ON from_node.id = from_stop.node_id
+            JOIN path_node to_node ON to_node.id = to_stop.node_id
             WHERE l.release_id = ?
+              AND from_node.enabled = TRUE
+              AND to_node.enabled = TRUE
             ORDER BY l.code
             """,
             resultSet -> {

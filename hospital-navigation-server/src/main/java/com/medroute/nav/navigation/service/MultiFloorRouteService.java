@@ -60,6 +60,10 @@ public class MultiFloorRouteService {
 
         PoiSnapshot startPoi = requirePoi(graph, request.startPoiId(), "startPoiId");
         PoiSnapshot endPoi = requirePoi(graph, request.endPoiId(), "endPoiId");
+        if (request.routeMode() == RouteMode.ACCESSIBLE) {
+            requireAccessibleEndpoint(startPoi, "startPoiId");
+            requireAccessibleEndpoint(endPoi, "endPoiId");
+        }
         requireNode(graph, startPoi.nodeId());
         requireNode(graph, endPoi.nodeId());
         if (startPoi.id().equals(endPoi.id())) {
@@ -94,6 +98,18 @@ public class MultiFloorRouteService {
             endPoi,
             path
         );
+    }
+
+    private void requireAccessibleEndpoint(
+        PoiSnapshot poi,
+        String fieldName
+    ) {
+        if (!poi.accessible()) {
+            throw new RouteEndpointNotAccessibleException(
+                fieldName,
+                poi.id()
+            );
+        }
     }
 
     private NavigationRouteResponse assemble(

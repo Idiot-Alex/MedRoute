@@ -9,6 +9,7 @@ import com.medroute.nav.navigation.service.OperationConflictException;
 import com.medroute.nav.navigation.service.PoiNotInReleaseException;
 import com.medroute.nav.navigation.service.ReleaseImmutableException;
 import com.medroute.nav.navigation.service.ReleaseMismatchException;
+import com.medroute.nav.navigation.service.RouteEndpointNotAccessibleException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -93,6 +94,25 @@ public class ApiExceptionHandler {
                 new ErrorDetail(
                     error.fieldName(),
                     "POI " + error.poiId() + " is not in the active release"
+                )
+            )
+        );
+    }
+
+    @ExceptionHandler(RouteEndpointNotAccessibleException.class)
+    public ResponseEntity<ApiErrorResponse> handleEndpointNotAccessible(
+        RouteEndpointNotAccessibleException error,
+        HttpServletRequest request
+    ) {
+        return response(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "ENDPOINT_NOT_ACCESSIBLE",
+            "无障碍路线的起点和终点都必须支持无障碍通行。",
+            request,
+            List.of(
+                new ErrorDetail(
+                    error.fieldName(),
+                    "POI " + error.poiId() + " is not accessible"
                 )
             )
         );

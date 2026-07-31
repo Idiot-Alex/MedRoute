@@ -118,6 +118,9 @@ importers:
       vite:
         specifier: 'catalog:'
         version: 7.3.6(jiti@2.7.0)(lightningcss@1.32.0)
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(vite@7.3.6(jiti@2.7.0)(lightningcss@1.32.0))
       vue-tsc:
         specifier: 'catalog:'
         version: 3.3.8(typescript@5.9.3)
