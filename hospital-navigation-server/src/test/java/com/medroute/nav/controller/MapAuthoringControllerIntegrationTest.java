@@ -332,12 +332,122 @@ class MapAuthoringControllerIntegrationTest {
         String imageUrl = workspace.floors().get(0)
             .mapRevision()
             .imageUrl();
+        assertThat(imageUrl).startsWith("/api/admin/map-images/");
         mockMvc.perform(get(imageUrl))
             .andExpect(status().isOk())
             .andExpect(content().contentType(MediaType.IMAGE_PNG))
             .andExpect(content().bytes(mapImage))
             .andExpect(header().exists("ETag"))
             .andExpect(header().exists("Cache-Control"));
+        mockMvc.perform(
+                get(
+                    "/api/map-images/{revisionId}",
+                    workspace.floors().get(0).mapRevision().id()
+                )
+            )
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    void onlyServesActivePublishedMapsFromThePublicEndpoint()
+        throws Exception {
+        AdminWorkspaceResponse firstDraft = authoringService.createDraft(
+            InMemoryPublishedGraphService.BUILDING_ID,
+            new CreateDraftRequest(
+                "DRAFT-PUBLIC-MAP-" + shortId(),
+                InMemoryPublishedGraphService.RELEASE_ID,
+                "验证公开底图只跟随当前发布版本"
+            ),
+            "integration-test"
+        );
+        assertThat(firstDraft.floors().get(0).mapRevision().imageUrl())
+            .startsWith("/hospital-map-demo/assets/");
+
+        byte[] firstMapImage = png(500, 400);
+        AdminWorkspaceResponse firstUploaded = uploadMap(
+            firstDraft,
+            firstMapImage
+        );
+        UUID firstMapRevisionId = firstUploaded.floors().get(0)
+            .mapRevision()
+            .id();
+        String firstAdminUrl = firstUploaded.floors().get(0)
+            .mapRevision()
+            .imageUrl();
+        String firstPublicUrl = "/api/map-images/" + firstMapRevisionId;
+
+        mockMvc.perform(get(firstPublicUrl))
+            .andExpect(status().isNotFound());
+        mockMvc.perform(get(firstAdminUrl))
+            .andExpect(status().isOk())
+            .andExpect(content().bytes(firstMapImage));
+
+        publish(firstUploaded, "发布第一张测试底图");
+        mockMvc.perform(get(firstPublicUrl))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(content().bytes(firstMapImage));
+        mockMvc.perform(
+                get(
+                    "/api/buildings/{buildingId}/navigation-context",
+                    InMemoryPublishedGraphService.BUILDING_ID
+                )
+            )
+            .andExpect(status().isOk())
+            .andExpect(
+                jsonPath("$.floors[0].mapRevision.imageUrl")
+                    .value(firstPublicUrl)
+            );
+
+        AdminWorkspaceResponse secondDraft = authoringService.createDraft(
+            InMemoryPublishedGraphService.BUILDING_ID,
+            new CreateDraftRequest(
+                "DRAFT-PUBLIC-MAP-" + shortId(),
+                firstUploaded.release().id(),
+                "发布新底图后旧版本不得公开读取"
+            ),
+            "integration-test"
+        );
+        byte[] secondMapImage = png(600, 480);
+        AdminWorkspaceResponse secondUploaded = uploadMap(
+            secondDraft,
+            secondMapImage
+        );
+        UUID secondMapRevisionId = secondUploaded.floors().get(0)
+            .mapRevision()
+            .id();
+        String secondAdminUrl = secondUploaded.floors().get(0)
+            .mapRevision()
+            .imageUrl();
+        String secondPublicUrl = "/api/map-images/" + secondMapRevisionId;
+
+        mockMvc.perform(get(secondPublicUrl))
+            .andExpect(status().isNotFound());
+        mockMvc.perform(get(secondAdminUrl))
+            .andExpect(status().isOk())
+            .andExpect(content().bytes(secondMapImage));
+
+        publish(secondUploaded, "发布第二张测试底图");
+        mockMvc.perform(get(secondPublicUrl))
+            .andExpect(status().isOk())
+            .andExpect(content().bytes(secondMapImage));
+        mockMvc.perform(get(firstPublicUrl))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"));
+        mockMvc.perform(get(firstAdminUrl))
+            .andExpect(status().isOk())
+            .andExpect(content().bytes(firstMapImage));
+
+        UUID unknownRevisionId = UUID.randomUUID();
+        mockMvc.perform(
+                get("/api/map-images/{revisionId}", unknownRevisionId)
+            )
+            .andExpect(status().isNotFound());
+        mockMvc.perform(
+                get("/api/admin/map-images/{revisionId}", unknownRevisionId)
+            )
+            .andExpect(status().isNotFound());
     }
 
     @Test
@@ -432,6 +542,42 @@ class MapAuthoringControllerIntegrationTest {
 
     private String shortId() {
         return UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private AdminWorkspaceResponse uploadMap(
+        AdminWorkspaceResponse draft,
+        byte[] content
+    ) {
+        return authoringService.replaceFloorMap(
+            draft.release().id(),
+            InMemoryPublishedGraphService.FLOOR_1_ID,
+            draft.release().contentRevision(),
+            new MockMultipartFile(
+                "file",
+                "1f.png",
+                MediaType.IMAGE_PNG_VALUE,
+                content
+            ),
+            "integration-test"
+        );
+    }
+
+    private void publish(
+        AdminWorkspaceResponse workspace,
+        String reason
+    ) {
+        AdminValidationResponse validation = authoringService.validate(
+            workspace.release().id(),
+            workspace.release().contentRevision(),
+            "integration-test"
+        );
+        assertThat(validation.passed()).isTrue();
+        authoringService.publish(
+            workspace.release().id(),
+            workspace.release().contentRevision(),
+            new PublishReleaseRequest(reason),
+            "integration-test"
+        );
     }
 
     private byte[] png(int width, int height) throws Exception {

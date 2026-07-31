@@ -90,6 +90,9 @@ POST /api/routes
 GET  /api/map-images/{revisionId}
 ```
 
+公开底图接口只返回当前启用发布版本引用的上传图片；草稿和历史版本通过该接口
+统一返回 `404`。
+
 可直接使用初始化数据验证跨层路线：
 
 ```json
@@ -117,6 +120,7 @@ POST   /api/admin/releases/{releaseId}/floors/{floorId}/map
 POST   /api/admin/releases/{releaseId}/validate
 POST   /api/admin/releases/{releaseId}/publish
 POST   /api/admin/releases/{releaseId}/rollback
+GET    /api/admin/map-images/{revisionId}
 
 GET    /api/admin/buildings/{buildingId}/route-regression-cases
 POST   /api/admin/buildings/{buildingId}/route-regression-cases
@@ -130,6 +134,7 @@ POST   /api/admin/navigation-qr-code
 ```
 
 草稿写入、底图替换、校验、发布和删除使用 `If-Match` 携带当前内容修订号。
+维护工作区中的上传图片使用管理底图接口预览，不受当前发布指针限制。
 维护后台位于 `hospital-map-demo/admin.html`。
 
 ## 测试

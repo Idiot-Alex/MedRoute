@@ -1,11 +1,6 @@
 <script setup lang="ts">
 import { ApiError, MedRouteApiClient } from "@medroute/api-client";
 import {
-  demoNavigationContext,
-  demoNavigationPois,
-  demoRoute,
-} from "@medroute/api-client/demo";
-import {
   DEFAULT_BUILDING_ID,
   findNavigationPoiByReference,
   type NavigationContext,
@@ -34,6 +29,10 @@ import PoiSearchDialog from "./components/PoiSearchDialog.vue";
 import RouteFloorMap from "./components/RouteFloorMap.vue";
 import StepNavigator from "./components/StepNavigator.vue";
 import {
+  isDemoFeatureEnabled,
+  shouldUseDemoMode,
+} from "./demo-access";
+import {
   navigationCalculationBlocker,
   resolveNavigationEndpoints,
   shouldAutomaticallyCalculateRoute,
@@ -41,6 +40,10 @@ import {
 } from "./navigation-safety";
 
 const params = new URLSearchParams(window.location.search);
+const demoFeatureEnabled = isDemoFeatureEnabled(
+  import.meta.env.DEV,
+  import.meta.env.VITE_ENABLE_DEMO,
+);
 const apiBase = (
   params.get("api") ?? window.location.origin
 ).replace(/\/$/, "");
@@ -79,13 +82,45 @@ const routeLoading = ref(false);
 const error = ref("");
 const routeError = ref("");
 const deepLinkNotice = ref("");
-const demoMode = ref(params.get("demo") === "1");
+const demoMode = ref(shouldUseDemoMode(demoFeatureEnabled, params));
+const demoNotice = ref("");
 const stepNavigatorOpen = ref(false);
 const currentStepIndex = ref(0);
 const poiSearchDialog = ref<
   InstanceType<typeof PoiSearchDialog> | null
 >(null);
 let routeRequestController: AbortController | null = null;
+
+interface NavigationDemoProvider {
+  context: () => NavigationContext;
+  pois: () => NavigationPoi[];
+  route: (
+    startPoiId: string,
+    endPoiId: string,
+    routeMode: NavigationRouteMode,
+  ) => NavigationRoute;
+  notice: string;
+}
+
+let navigationDemoProvider: Promise<NavigationDemoProvider> | null = null;
+
+const loadNavigationDemo: () => Promise<NavigationDemoProvider> =
+  import.meta.env.DEV
+    ? () => {
+        if (!demoFeatureEnabled) {
+          return Promise.reject(
+            new Error("Navigation demo data is disabled."),
+          );
+        }
+        navigationDemoProvider ??= import("./navigation-demo").then(
+          (module) => module.navigationDemoProvider,
+        );
+        return navigationDemoProvider;
+      }
+    : () =>
+        Promise.reject(
+          new Error("Navigation demo data is disabled."),
+        );
 
 const activeFloor = computed(
   () =>
@@ -187,8 +222,10 @@ async function load(): Promise<void> {
   deepLinkNotice.value = "";
   try {
     if (demoMode.value) {
-      context.value = demoNavigationContext();
-      pois.value = demoNavigationPois();
+      const demo = await loadNavigationDemo();
+      context.value = demo.context();
+      pois.value = demo.pois();
+      demoNotice.value = demo.notice;
     } else {
       const [nextContext, poiResponse] = await Promise.all([
         client.navigationContext(buildingId),
@@ -265,14 +302,6 @@ async function load(): Promise<void> {
   }
 }
 
-function useDemo(): void {
-  demoMode.value = true;
-  const url = new URL(window.location.href);
-  url.searchParams.set("demo", "1");
-  window.history.replaceState(null, "", url);
-  void load();
-}
-
 async function calculate(): Promise<void> {
   const calculationBlocker = navigationCalculationBlocker({
     contextLoaded: Boolean(context.value),
@@ -294,7 +323,11 @@ async function calculate(): Promise<void> {
   stepNavigatorOpen.value = false;
   try {
     const nextRoute = demoMode.value
-      ? demoRoute(startPoiId.value, endPoiId.value, routeMode.value)
+      ? (await loadNavigationDemo()).route(
+          startPoiId.value,
+          endPoiId.value,
+          routeMode.value,
+        )
       : await calculatePublishedRoute(controller.signal);
     if (
       controller.signal.aborted ||
@@ -690,7 +723,7 @@ onMounted(load);
         <span
           v-if="demoMode"
           class="pointer-events-none absolute bottom-3 right-3 rounded-md border border-[#d7dce2] bg-white/95 px-2 py-1 text-[10px] text-[#667085]"
-          >演示数据 · 未经现场核验</span
+          >{{ demoNotice }}</span
         >
       </section>
 
@@ -917,13 +950,6 @@ onMounted(load);
             @click="load"
           >
             重试连接
-          </button>
-          <button
-            class="h-10 whitespace-nowrap rounded-md border border-[#cfd5dc] bg-white px-3.5 text-xs font-semibold text-[#344054] active:translate-y-px"
-            type="button"
-            @click="useDemo"
-          >
-            查看演示地图
           </button>
         </div>
       </section>

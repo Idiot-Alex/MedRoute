@@ -11,25 +11,35 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Duration;
 import java.util.UUID;
 
-@CrossOrigin
+@CrossOrigin(
+    allowedHeaders = {"X-Admin-User", "X-Request-Id"},
+    exposedHeaders = {"ETag", "X-Request-Id"}
+)
 @RestController
-@RequestMapping("/api/map-images")
-public class FloorMapAssetController {
+@RequestMapping("/api/admin/map-images")
+public class AdminFloorMapAssetController {
     private final JdbcFloorMapAssetRepository repository;
 
-    public FloorMapAssetController(JdbcFloorMapAssetRepository repository) {
+    public AdminFloorMapAssetController(
+        JdbcFloorMapAssetRepository repository
+    ) {
         this.repository = repository;
     }
 
     @GetMapping("/{revisionId}")
     public ResponseEntity<byte[]> image(@PathVariable UUID revisionId) {
-        FloorMapAsset asset = repository.findActivePublished(revisionId);
+        FloorMapAsset asset = repository.findForAdmin(revisionId);
         return ResponseEntity
             .ok()
             .contentType(MediaType.parseMediaType(asset.mimeType()))
-            .cacheControl(CacheControl.noStore())
+            .cacheControl(
+                CacheControl.maxAge(Duration.ofDays(365))
+                    .cachePrivate()
+                    .immutable()
+            )
             .eTag(asset.sha256())
             .body(asset.content());
     }

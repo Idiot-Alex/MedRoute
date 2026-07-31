@@ -15,8 +15,35 @@ public class JdbcFloorMapAssetRepository {
         this.jdbc = jdbc;
     }
 
-    public FloorMapAsset find(UUID revisionId) {
-        List<FloorMapAsset> assets = jdbc.query(
+    public FloorMapAsset findActivePublished(UUID revisionId) {
+        return find(
+            revisionId,
+            """
+            SELECT
+                fma.content,
+                fmr.mime_type,
+                fmr.sha256
+            FROM floor_map_revision fmr
+            JOIN floor_map_asset fma
+                ON fma.floor_map_revision_id = fmr.id
+            WHERE fmr.public_id = ?
+              AND EXISTS (
+                  SELECT 1
+                  FROM release_floor_map rfm
+                  JOIN building_map_release r
+                      ON r.id = rfm.release_id
+                  WHERE rfm.floor_map_revision_id = fmr.id
+                    AND r.status = 'published'
+                    AND r.is_active = TRUE
+              )
+            """,
+            "Unknown active published floor map revision: "
+        );
+    }
+
+    public FloorMapAsset findForAdmin(UUID revisionId) {
+        return find(
+            revisionId,
             """
             SELECT
                 fma.content,
@@ -27,6 +54,17 @@ public class JdbcFloorMapAssetRepository {
                 ON fma.floor_map_revision_id = fmr.id
             WHERE fmr.public_id = ?
             """,
+            "Unknown uploaded floor map revision: "
+        );
+    }
+
+    private FloorMapAsset find(
+        UUID revisionId,
+        String query,
+        String notFoundMessage
+    ) {
+        List<FloorMapAsset> assets = jdbc.query(
+            query,
             (rs, rowNum) -> new FloorMapAsset(
                 rs.getBytes("content"),
                 rs.getString("mime_type"),
@@ -36,7 +74,7 @@ public class JdbcFloorMapAssetRepository {
         );
         if (assets.isEmpty()) {
             throw new NavigationResourceNotFoundException(
-                "Unknown uploaded floor map revision: " + revisionId
+                notFoundMessage + revisionId
             );
         }
         return assets.get(0);

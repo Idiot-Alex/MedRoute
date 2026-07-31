@@ -71,6 +71,7 @@ import {
 import {
   computed,
   defineAsyncComponent,
+  onBeforeUnmount,
   onMounted,
   reactive,
   ref,
@@ -86,6 +87,10 @@ import QrCodeDialog from "./components/QrCodeDialog.vue";
 import ReleaseDialogs from "./components/ReleaseDialogs.vue";
 import ReleasePanel from "./components/ReleasePanel.vue";
 import RouteRegressionDialog from "./components/RouteRegressionDialog.vue";
+import {
+  confirmDiscardUnsavedChanges,
+  createUnsavedChangesBeforeUnloadHandler,
+} from "./unsaved-changes";
 
 const OperationsWorkbench = defineAsyncComponent(
   () => import("./components/OperationsWorkbench.vue"),
@@ -472,6 +477,19 @@ async function load(preferredReleaseId?: string): Promise<void> {
   }
 }
 
+function confirmDiscardChanges(): boolean {
+  return confirmDiscardUnsavedChanges(dirty.value, (message) =>
+    window.confirm(message),
+  );
+}
+
+async function reloadWorkspace(): Promise<void> {
+  if (!confirmDiscardChanges()) {
+    return;
+  }
+  await load(workspace.value?.release.id);
+}
+
 function useDemo(): void {
   clearDemoMapObjectUrls();
   demoMode.value = true;
@@ -488,10 +506,7 @@ async function switchRelease(releaseId: string): Promise<void> {
   if (!workspace.value || releaseId === workspace.value.release.id) {
     return;
   }
-  if (
-    dirty.value &&
-    !window.confirm("当前版本有未保存修改，确认放弃并切换版本？")
-  ) {
+  if (!confirmDiscardChanges()) {
     return;
   }
   busy.value = true;
@@ -1426,6 +1441,9 @@ function openDiscardDialog(): void {
 }
 
 async function createDraft(request: CreateDraftRequest): Promise<void> {
+  if (!confirmDiscardChanges()) {
+    return;
+  }
   busy.value = true;
   try {
     if (demoMode.value) {
@@ -2067,7 +2085,18 @@ function showToast(message: string): void {
   }, 2600);
 }
 
-onMounted(load);
+const beforeUnloadHandler = createUnsavedChangesBeforeUnloadHandler(
+  () => dirty.value,
+);
+
+onMounted(() => {
+  window.addEventListener("beforeunload", beforeUnloadHandler);
+  void load();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("beforeunload", beforeUnloadHandler);
+});
 </script>
 
 <template>
@@ -2102,7 +2131,7 @@ onMounted(load);
           type="button"
           title="重新加载"
           :disabled="busy"
-          @click="load()"
+          @click="reloadWorkspace"
         >
           <RefreshCw :size="16" :class="{ 'animate-spin': busy }" />
           <span class="sr-only">重新加载</span>

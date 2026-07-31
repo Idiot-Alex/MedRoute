@@ -1595,13 +1595,24 @@ public class JdbcMapAuthoringRepository {
                 new AdminWorkspaceResponse.MapRevision(
                     uuid(resultSet, "map_public_id"),
                     resultSet.getInt("revision_no"),
-                    resultSet.getString("image_url"),
+                    adminMapImageUrl(
+                        uuid(resultSet, "map_public_id"),
+                        resultSet.getString("image_url")
+                    ),
                     resultSet.getInt("image_width"),
                     resultSet.getInt("image_height")
                 )
             ),
             releaseId
         );
+    }
+
+    private String adminMapImageUrl(UUID mapRevisionId, String imageUrl) {
+        String publicUrl = "/api/map-images/" + mapRevisionId;
+        if (publicUrl.equals(imageUrl)) {
+            return "/api/admin/map-images/" + mapRevisionId;
+        }
+        return imageUrl;
     }
 
     private DraftGraphPayload loadGraph(long releaseId) {
