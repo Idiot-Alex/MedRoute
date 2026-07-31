@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: hospital-navigation-server/pom.xml
+
+      - name: Verify Docker availability
+        run: docker info
+
+      - name: Run Maven tests
+        working-directory: hospital-navigation-server
+        run: ./mvnw --batch-mode --no-transfer-progress test
+
+      - name: Confirm PostgreSQL integration test ran
+        working-directory: hospital-navigation-server
+        run: >-
+          grep -Eq 'tests="1".*errors="0".*skipped="0".*failures="0"'
+          target/surefire-reports/TEST-com.medroute.nav.migration.PostgresqlIdentitySequenceIntegrationTest.xml
+
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        working-directory: frontend
+        run: pnpm test
+
+      - name: Run type checks
+        working-directory: frontend
+        run: pnpm typecheck
+
+      - name: Build production bundles
+        working-directory: frontend
+        run: pnpm build
+
+  compose:
+    name: Validate pilot Compose config
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate Compose config
+        run: docker compose --profile pilot config --quiet
